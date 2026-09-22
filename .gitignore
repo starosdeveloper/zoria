@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+# watcher state: session token, logs — never commit
+.zoria-state/
+secrets/
+*.session
+watcher.json

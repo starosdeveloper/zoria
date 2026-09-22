@@ -1,0 +1,24 @@
+# systemd user unit. Install:
+#   mkdir -p ~/.config/systemd/user && cp scripts/zoria-watcher.service ~/.config/systemd/user/
+#   edit WorkingDirectory below, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now zoria-watcher
+#   loginctl enable-linger "$USER"      # keep running after logout
+#   journalctl --user -u zoria-watcher -f
+[Unit]
+Description=Zoria.net ether watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/zoria
+ExecStart=/usr/bin/env node apps/watcher/src/main.ts run
+Restart=always
+RestartSec=10
+# Password can live here instead of the config file:
+# Environment=ZORIA_PASSWORD=...
+# or in a 0600 file: EnvironmentFile=%h/.config/zoria/watcher.env
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

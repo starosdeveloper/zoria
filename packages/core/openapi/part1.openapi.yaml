@@ -1,0 +1,2499 @@
+openapi: 3.1.0
+info:
+  title: Zaria Battle.net, part 1
+  version: 1.1.0
+  description: 'HTTP API of the Zaria Battle.net for the part 1 client. All routes are relative to /api/v1; bodies are JSON. Authorization: Bearer <token> from register or login. Errors are {"error":{"code","field?"}}; 5xx also carry requestId. CORS: participant routes accept bearer requests without cookies from any origin and answer Access-Control-Allow-Origin: *. A request that carries a cookie from a foreign origin is refused (403 origin-not-allowed). The organizer desk is not part of this contract and accepts only configured origins. Retry-After and X-Request-Id are exposed to browsers. Ether: until the registration window the hub answers every route here except /auth/login with noise or a sealed Envelope (HTTP 200 on /ether and /ether/roll, 503 elsewhere). Only an Envelope whose Ed25519 seal verifies with the published public key is a signal. GET /ether/key returns that key without noise; check its fingerprint against the task text. 429 is never noise: wait Retry-After seconds and retry the same request. Codes are jammed (the address is jammed for exceeding 20 requests per minute), rate-limited (account or login/registration limit exceeded) and authentication-busy (password check queue is full on /auth/register and /auth/login, Retry-After: 5, not a rate-limit strike). Unknown response fields may appear; ignore them. Revision 1.1.0 of 2026-09-22: registration takes the one-time application code in invitation (422 invalid-invitation), and repositoryUrl is any private repository of the participant.'
+servers:
+  - url: https://zoria.net/api/v1
+paths:
+  /public/config:
+    get:
+      summary: Season settings and the GitHub account to invite
+      tags:
+        - Participant
+      security: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /auth/register:
+    post:
+      summary: Register during the window with the one-time code from your application (invitation) and your own private GitHub repository; optional lang (uk or en, default uk) sets the language of server texts; returns a session
+      tags:
+        - Participant
+      security: []
+      parameters: []
+      responses:
+        "201":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                username: &a1
+                  type: string
+                  pattern: ^[a-z][a-z0-9_-]{2,31}$
+                password: &a2
+                  type: string
+                  minLength: 12
+                  maxLength: 256
+                  writeOnly: true
+                displayName:
+                  type: string
+                  maxLength: 80
+                invitation:
+                  type: string
+                  maxLength: 100
+                  writeOnly: true
+                  description: One-time code sent to the applicant by the organizers; 422 invalid-invitation when it is unknown, used or expired
+                repositoryUrl:
+                  type: string
+                  maxLength: 256
+                  description: Own repository on GitHub (owner/repo or a github.com address); it must be private - the bot does not join a public repository
+                lang:
+                  enum:
+                    - uk
+                    - en
+              required:
+                - username
+                - password
+                - displayName
+                - invitation
+                - repositoryUrl
+  /auth/login:
+    post:
+      summary: Create a bearer session
+      tags:
+        - Participant
+      security: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                username: *a1
+                password: *a2
+              required:
+                - username
+                - password
+  /auth/logout:
+    post:
+      summary: Revoke the current session or token
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "204":
+          description: Success
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+              required: []
+  /me:
+    get:
+      summary: Own account
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                required:
+                  - user
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+    patch:
+      summary: "Change own settings: lang (uk or en) of server texts, letters and admission reasons"
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                required:
+                  - user
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                lang:
+                  enum:
+                    - uk
+                    - en
+              required: []
+  /me/repository:
+    get:
+      summary: Own repository and its access review
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repository:
+                    anyOf:
+                      - $ref: "#/components/schemas/Repository"
+                      - type: "null"
+                required:
+                  - repository
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+    put:
+      summary: Change the repository; login sessions only (client tokens get 403); a new URL resets the review to pending
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repository:
+                    anyOf:
+                      - $ref: "#/components/schemas/Repository"
+                      - type: "null"
+                required:
+                  - repository
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                url:
+                  type: string
+                  maxLength: 256
+              required:
+                - url
+  /me/summary:
+    get:
+      summary: "Cheap poll: counters and change stamps"
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Summary"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /news:
+    get:
+      summary: Published news, paged
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000000
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/News"
+                  nextOffset:
+                    type:
+                      - integer
+                      - "null"
+                    minimum: 0
+                required:
+                  - items
+                  - nextOffset
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /inbox:
+    get:
+      summary: Own deliveries, paged
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000000
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  nextOffset:
+                    type:
+                      - integer
+                      - "null"
+                    minimum: 0
+                required:
+                  - items
+                  - nextOffset
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /inbox/{id}:
+    get:
+      summary: One delivery; reading does not mark it read
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: "#/components/schemas/Message"
+                required:
+                  - message
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /inbox/{id}/read:
+    post:
+      summary: Mark a delivery read
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    $ref: "#/components/schemas/Message"
+                required:
+                  - message
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+              required: []
+  /stages:
+    get:
+      summary: "Released task parts: excerpts instead of bodies"
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StageSummary"
+                required:
+                  - items
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /stages/{id}:
+    get:
+      summary: One released part with body and errata; an unreleased ID is 404
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stage:
+                    $ref: "#/components/schemas/Stage"
+                required:
+                  - stage
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /stages/{id}/ack:
+    post:
+      summary: Acknowledge receipt; it releases nothing
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stage:
+                    $ref: "#/components/schemas/Stage"
+                required:
+                  - stage
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+              required: []
+  /developer/check:
+    post:
+      summary: Authenticated exact Unicode JSON echo
+      tags:
+        - Participant
+      security:
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiVersion:
+                    const: 1
+                  accountId: &a6
+                    type: string
+                    format: uuid
+                  serverTime: &a5
+                    type: string
+                    format: date-time
+                  echo: &a3
+                    type: string
+                  checks:
+                    type: object
+                    properties:
+                      authenticated:
+                        const: true
+                      json:
+                        const: true
+                      utf8:
+                        const: true
+                    required:
+                      - authenticated
+                      - json
+                      - utf8
+                  summary:
+                    $ref: "#/components/schemas/Summary"
+                required:
+                  - apiVersion
+                  - accountId
+                  - serverTime
+                  - echo
+                  - checks
+                  - summary
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                echo:
+                  type: string
+                  maxLength: 4096
+              required:
+                - echo
+  /ether:
+    get:
+      summary: "Listen to the ether: noise before the window, or a sealed Envelope"
+      tags:
+        - Ether
+      security: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /ether/roll:
+    get:
+      summary: "On-air log: public order of coming on air, as a sealed Envelope"
+      tags:
+        - Ether
+      security: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+  /ether/key:
+    get:
+      summary: "Seal public key: algorithm, key id, raw Ed25519 key and its SHA-256 fingerprint; never noise, outside the ether rate limit"
+      tags:
+        - Ether
+      security: []
+      parameters: []
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EtherKey"
+        "400":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          headers:
+            Retry-After:
+              description: Seconds to wait
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 86400
+        "500":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Stable error code
+          content:
+            application/json:
+              schema:
+                description: "Before the window: a sealed ether frame; otherwise a stable error"
+                anyOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Config:
+      type: object
+      properties:
+        apiVersion:
+          const: 1
+        title: *a3
+        season: *a3
+        registrationOpen: &a4
+          type: boolean
+        inviteRequired: *a4
+        repositoryRequired: *a4
+        repositoryAccess:
+          anyOf:
+            - type: object
+              properties:
+                githubUsername: *a3
+                permission: *a3
+                instructions: *a3
+              required:
+                - githubUsername
+                - permission
+                - instructions
+            - type: "null"
+        webClient: *a4
+      required:
+        - apiVersion
+        - title
+        - season
+        - registrationOpen
+        - inviteRequired
+        - repositoryRequired
+        - repositoryAccess
+        - webClient
+    Envelope:
+      type: object
+      properties:
+        frame:
+          type: string
+          contentMediaType: application/json
+          contentSchema:
+            $ref: "#/components/schemas/Frame"
+        seal:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{86}$
+        key:
+          type: string
+          pattern: ^[0-9a-f]{16}$
+      required:
+        - frame
+        - seal
+        - key
+      description: Sealed ether frame. seal is an Ed25519 signature of the UTF-8 bytes of the frame string, base64url without padding; key is the first 16 hex digits of SHA-256 of the raw public key. Verify before parsing frame.
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+          properties:
+            code:
+              type: string
+            field:
+              type: string
+    EtherKey:
+      type: object
+      properties:
+        algorithm:
+          const: Ed25519
+        key:
+          type: string
+          pattern: ^[0-9a-f]{16}$
+        publicKey:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+        fingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+      required:
+        - algorithm
+        - key
+        - publicKey
+        - fingerprint
+      description: Seal public key. publicKey is the raw 32-byte Ed25519 key in base64url without padding; fingerprint is SHA-256 of those 32 bytes in hex, key its first 16 digits. Compare fingerprint with the task text before trusting the key.
+    Frame:
+      type: object
+      required:
+        - v
+        - kind
+        - station
+        - at
+        - phase
+        - window
+        - harbinger
+        - fragment
+        - onAir
+      additionalProperties: true
+      properties:
+        v:
+          const: 1
+        kind:
+          enum:
+            - signal
+            - roll
+        station:
+          const: zoria
+        at: *a5
+        phase:
+          enum:
+            - static
+            - window
+            - after
+        window:
+          anyOf:
+            - type: object
+              properties:
+                opensAt: *a5
+                closesAt: *a5
+              required:
+                - opensAt
+                - closesAt
+            - type: "null"
+        harbinger:
+          anyOf:
+            - type: object
+              required:
+                - opensIn
+              properties:
+                opensIn:
+                  type: integer
+                  minimum: 0
+                text:
+                  type: object
+                  properties:
+                    uk: *a3
+                    en: *a3
+                  required:
+                    - uk
+                    - en
+                  description: In-world voice of the harbinger in Ukrainian and Russian; no numbers, only opensIn is mechanics
+            - type: "null"
+        fragment:
+          anyOf:
+            - type: object
+              properties:
+                n:
+                  type: integer
+                  minimum: 1
+                of:
+                  type: integer
+                  minimum: 1
+                text: *a3
+              required:
+                - n
+                - of
+                - text
+            - type: "null"
+        onAir: &a10
+          type: integer
+          minimum: 0
+        roll:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollEntry"
+    Message:
+      type: object
+      properties:
+        id: *a6
+        messageId:
+          type:
+            - string
+            - "null"
+        stageId:
+          type:
+            - string
+            - "null"
+        kind:
+          enum:
+            - message
+            - stage
+        title: *a3
+        body: *a3
+        createdAt: *a5
+        readAt: &a7
+          type:
+            - string
+            - "null"
+          format: date-time
+        notice:
+          anyOf:
+            - $ref: "#/components/schemas/Notice"
+            - type: "null"
+      required:
+        - id
+        - messageId
+        - stageId
+        - kind
+        - title
+        - body
+        - createdAt
+        - readAt
+        - notice
+    News:
+      type: object
+      properties:
+        id: *a6
+        title: *a3
+        body: *a3
+        createdAt: *a5
+        updatedAt: *a5
+        publishedAt: *a7
+        archivedAt: *a7
+      required:
+        - id
+        - title
+        - body
+        - createdAt
+        - updatedAt
+        - publishedAt
+        - archivedAt
+    Notice:
+      anyOf:
+        - $ref: "#/components/schemas/RepositoryNotice"
+        - type: object
+          required:
+            - type
+          properties:
+            type: *a3
+      description: "Typed notification generated by the hub. In part 1 the type is repository: every change of your repository status. Show an unknown type as a plain message by its title and body."
+    Repository:
+      type: object
+      properties:
+        url: *a3
+        accessStatus:
+          enum:
+            - pending
+            - verified
+            - needs-attention
+        checkedAt: *a7
+        reason:
+          type: &a8
+            - string
+            - "null"
+          description: In the account language; a decision made by the organizer keeps the organizer text
+        reasonCode: &a9
+          enum:
+            - inviter-mismatch
+            - marker-found
+            - marker-other
+            - marker-absent
+            - organizer
+            - null
+          description: "Machine reason: inviter-mismatch (the invitation came from another GitHub account), marker-found (.zoria names this account), marker-other (.zoria names another account), marker-absent (no .zoria yet), organizer (decided by the organizer by hand, reason is the organizer text); null - none"
+        updatedAt: *a5
+        verifiedElsewhere: *a4
+      required:
+        - url
+        - accessStatus
+        - checkedAt
+        - reason
+        - reasonCode
+        - updatedAt
+        - verifiedElsewhere
+    RepositoryNotice:
+      type: object
+      properties:
+        type:
+          const: repository
+        url: *a3
+        accessStatus:
+          enum:
+            - pending
+            - verified
+            - needs-attention
+        reason:
+          type: *a8
+        reasonCode: *a9
+      required:
+        - type
+        - url
+        - accessStatus
+        - reason
+        - reasonCode
+    RollEntry:
+      type: object
+      properties:
+        n:
+          type: integer
+          minimum: 1
+        at: *a5
+        sinceOpen:
+          type: integer
+          minimum: 0
+        name: *a3
+      required:
+        - n
+        - at
+        - sinceOpen
+        - name
+    Session:
+      type: object
+      properties:
+        token: *a3
+        sessionId: *a6
+        expiresAt: *a5
+        user:
+          $ref: "#/components/schemas/User"
+      required:
+        - token
+        - sessionId
+        - expiresAt
+        - user
+    Stage:
+      type: object
+      properties:
+        id: *a6
+        position: *a10
+        title: *a3
+        body: *a3
+        publishedAt: *a5
+        releasedAt: *a5
+        acknowledgedAt: *a7
+        errata:
+          type:
+            - string
+            - "null"
+        errataAt: *a7
+      required:
+        - id
+        - position
+        - title
+        - body
+        - publishedAt
+        - releasedAt
+        - acknowledgedAt
+        - errata
+        - errataAt
+    StageSummary:
+      type: object
+      properties:
+        id: *a6
+        position: *a10
+        title: *a3
+        excerpt: *a3
+        publishedAt: *a5
+        releasedAt: *a5
+        acknowledgedAt: *a7
+        errataAt: *a7
+      required:
+        - id
+        - position
+        - title
+        - excerpt
+        - publishedAt
+        - releasedAt
+        - acknowledgedAt
+        - errataAt
+    Summary:
+      type: object
+      properties:
+        unread: *a10
+        releasedStages: *a10
+        acknowledgedStages: *a10
+        latestNews: *a7
+        repositoryAt: *a7
+        serverTime: *a5
+      required:
+        - unread
+        - releasedStages
+        - acknowledgedStages
+        - latestNews
+        - repositoryAt
+        - serverTime
+      additionalProperties: true
+      description: "Cheap poll. repositoryAt moves on every change of your repository or its review: reread /me/repository only then. The server may add fields of later parts; ignore unknown fields."
+    User:
+      type: object
+      properties:
+        id: *a6
+        username: *a3
+        displayName: *a3
+        role:
+          enum:
+            - admin
+            - participant
+        disabled: *a4
+        createdAt: *a5
+        lang:
+          enum:
+            - uk
+            - en
+          description: "Language of server texts for this account: letters and admission reasons"
+      required:
+        - id
+        - username
+        - displayName
+        - role
+        - disabled
+        - createdAt
+        - lang

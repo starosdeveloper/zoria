@@ -1,0 +1,18 @@
+title = "zoria"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "zoria-bearer-token"
+description = "Zoria.net session token (43 chars base64url) next to a bearer/token key"
+regex = '''(?i)(?:bearer|token)["'\s:=]+([A-Za-z0-9_-]{43})\b'''
+secretGroup = 1
+
+[allowlist]
+description = "Public training key material from the client spec (§5.2) is intentionally published"
+regexes = [
+  '''bJrTquHp22_7HTNSbyX62-wRZ6_-2fACAvvPx3FY-ew''',
+  '''fJp9HfUeN_fA6pcc7H0hQoGerwUCs7lfTDkZDltKPeE''',
+]
+paths = ['''docs/''']

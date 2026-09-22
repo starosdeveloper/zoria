@@ -1,0 +1,17 @@
+{
+  "server": "stand",
+  "fingerprint": null,
+  "mode": "register",
+  "account": {
+    "username": "north",
+    "displayName": "Північна вахта",
+    "password": "put-it-here-or-in-ZORIA_PASSWORD",
+    "invitation": "STAND-2026",
+    "repositoryUrl": "north/zoria-client",
+    "lang": "uk"
+  },
+  "notify": {
+    "url": "https://ntfy.sh/your-private-topic",
+    "telegram": { "botToken": "", "chatId": "" }
+  }
+}
