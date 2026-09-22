@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import {
   ApiClient,
@@ -25,6 +26,7 @@ import {
 import type { WatcherConfig } from './config.ts';
 import { FileStore, readIfExists, writePrivateAtomic } from './files.ts';
 import type { Journal, Notifier } from './log.ts';
+import { resolveSecrets, type Secrets } from './secrets.ts';
 
 const SUMMARY_INTERVAL_MS = 15_000;
 const ROLL_LOOKUP_INTERVAL_MS = 5 * 60_000;
@@ -47,6 +49,8 @@ export class Watcher {
   private session: Session | null = null;
   private registering: Promise<void> | null = null;
   private registrationStopped = false;
+  private stoppedStamp: string | null = null;
+  private secretsComplainedAt = 0;
   private accountLoop: Promise<void> | null = null;
   private lastSummary: Summary | null = null;
   private lastRepository: Repository | null = null;
@@ -85,6 +89,10 @@ export class Watcher {
     });
     if (this.config.fingerprint === null) {
       this.journal.write('warn', 'fingerprint-not-pinned', { hint: 'впишите "fingerprint" из ТЗ §3, иначе ключ не сверяется с ТЗ' });
+    }
+    if (this.config.mode === 'register' && this.config.account) {
+      const resolved = resolveSecrets(this.config.secretsFile, this.config.account.inline, 'register');
+      this.journal.write(resolved.ok ? 'info' : 'warn', resolved.ok ? 'secrets-ready' : 'secrets-pending', resolved.ok ? { file: this.config.secretsFile } : { file: this.config.secretsFile, problems: resolved.problems });
     }
     await this.loadKey();
     this.loadSession();
@@ -179,8 +187,21 @@ export class Watcher {
 
   private startRegistration(signal: AbortSignal, trigger: 'frame' | 'config'): void {
     if (this.config.mode !== 'register' || !this.config.account) return;
-    if (this.session || this.registering || this.registrationStopped) return;
-    const account = this.config.account;
+    if (this.session || this.registering) return;
+    const profile = this.config.account;
+    const resolved = resolveSecrets(this.config.secretsFile, profile.inline, 'register');
+    if (!resolved.ok) {
+      this.complainAboutSecrets(resolved.problems, 'просвет открыт, а регистрировать нечем');
+      return;
+    }
+    // A refusal (e.g. invalid-invitation) stops retries until the secrets file changes.
+    const stamp = secretsStamp(resolved.secrets);
+    if (this.registrationStopped) {
+      if (stamp === this.stoppedStamp) return;
+      this.registrationStopped = false;
+      this.journal.write('alert', 'secrets-changed-retry');
+    }
+    const account = { ...profile, ...resolved.secrets };
     this.journal.write('alert', 'registration-start', { trigger, username: account.username, repository: account.repositoryUrl });
     this.registering = (async () => {
       try {
@@ -190,6 +211,7 @@ export class Watcher {
             this.journal.write('info', 'registration-step', { ...step });
           },
         });
+        if (outcome.kind === 'rejected') this.stoppedStamp = stamp;
         await this.onRegistration(outcome, signal);
       } catch (error) {
         if (!signal.aborted) this.journal.write('alert', 'registration-crashed', { error: String(error) });
@@ -224,6 +246,15 @@ export class Watcher {
         await this.notifier.send(`Регистрация не прошла после многих попыток: ${describeFailure(outcome.lastFailure)}. Повтор на следующем кадре.`);
         return;
     }
+  }
+
+  /** Loud but rate-limited: once per 10 minutes while the problem lasts. */
+  private complainAboutSecrets(problems: string[], context: string): void {
+    if (Date.now() - this.secretsComplainedAt < 10 * 60_000) return;
+    this.secretsComplainedAt = Date.now();
+    const text = `${context}: ${problems.join('; ')}. Впишите в ${this.config.secretsFile} — наблюдатель подхватит без перезапуска.`;
+    this.journal.write('alert', 'secrets-missing', { context, problems });
+    void this.notifier.send(text);
   }
 
   private async inviteText(signal: AbortSignal): Promise<string> {
@@ -289,7 +320,12 @@ export class Watcher {
       this.session = null;
       return;
     }
-    const login = await this.api.login(account.username, account.password, signal);
+    const resolved = resolveSecrets(this.config.secretsFile, account.inline, 'login');
+    if (!resolved.ok) {
+      this.complainAboutSecrets(resolved.problems, 'нужен повторный вход, а пароля нет');
+      return;
+    }
+    const login = await this.api.login(account.username, resolved.secrets.password, signal);
     if (login.ok) {
       this.saveSession(login.data);
       this.journal.write('info', 'relogin', { why, expiresAt: login.data.expiresAt });
@@ -378,6 +414,13 @@ export class Watcher {
       const opens = new Date(s.opensAtMs).toISOString();
       this.journal.write('alert', 'harbinger', { opensAt: opens, local: formatLocal(s.opensAtMs), zone: localZoneName(), text: s.harbinger?.text.ru });
       void this.notifier.send(`Провозвестник: просвет откроется ${formatLocal(s.opensAtMs)} (${localZoneName()}), ${opens}.`);
+      if (this.config.mode === 'register' && this.config.account && !this.session) {
+        const resolved = resolveSecrets(this.config.secretsFile, this.config.account.inline, 'register');
+        if (!resolved.ok) {
+          this.secretsComplainedAt = 0;
+          this.complainAboutSecrets(resolved.problems, 'провозвестник пойман, до просвета меньше 6 часов');
+        }
+      }
     }
     if (o.verdict.kind === 'signal' && o.verdict.frame.fragment) {
       this.journal.write('info', 'fragment', { n: o.verdict.frame.fragment.n, of: o.verdict.frame.fragment.of, collected: s.fragments.size });
@@ -407,4 +450,9 @@ function failureData(f: Failure): Record<string, unknown> {
     case 'silenced':
       return { kind, until: new Date(f.until).toISOString() };
   }
+}
+
+/** Identifies a set of secrets without keeping them around in a second place. */
+function secretsStamp(secrets: Secrets): string {
+  return createHash('sha256').update(`${secrets.password}\u0000${secrets.invitation}`).digest('hex');
 }

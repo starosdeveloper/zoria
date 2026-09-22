@@ -48,7 +48,7 @@ async function run(): Promise<number> {
 }
 
 async function check(): Promise<number> {
-  const config = loadConfig(process.argv[3], { requireSecrets: false });
+  const config = loadConfig(process.argv[3]);
   const gate = new RequestGate({ store: new MemoryStore(), storeKey: 'gate' });
   const api = new ApiClient({ transport: new HttpTransport(config.apiBase, gate), token: () => null, etherOpen: () => false });
   const keys = new KeyRing(() => api.etherKey(), config.fingerprint);

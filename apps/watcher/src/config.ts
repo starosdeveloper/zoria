@@ -1,7 +1,10 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { Secrets } from './secrets.ts';
 import {
-  checkDraft,
+  checkDisplayName,
+  checkRepository,
+  checkUsername,
   DEFAULT_SERVERS,
   isServerId,
   normalizeUsername,
@@ -9,7 +12,6 @@ import {
   parseRepository,
   tryParseJson,
   type Lang,
-  type RegisterRequest,
   type ServerId,
 } from '@zoria/core';
 import { isExposed, readIfExists } from './files.ts';
@@ -20,10 +22,21 @@ export interface WatcherConfig {
   fingerprint: string | null;
   /** `watch` only listens and alerts; `register` also sends the prepared application. */
   mode: 'watch' | 'register';
-  account: RegisterRequest | null;
+  account: AccountProfile | null;
+  /** 0600 file with ZORIA_PASSWORD / ZORIA_INVITATION, re-read whenever the secrets are needed. */
+  secretsFile: string;
   notify: { url: string | null; telegram: { botToken: string; chatId: string } | null };
   stateDir: string;
   configPath: string;
+}
+
+/** Everything about the account except the secrets, which are resolved lazily (secrets.ts). */
+export interface AccountProfile {
+  username: string;
+  displayName: string;
+  repositoryUrl: string;
+  lang: Lang;
+  inline: Partial<Secrets>;
 }
 
 export class ConfigError extends Error {
@@ -50,11 +63,10 @@ function optString(obj: Record<string, unknown>, key: string): string | null {
 }
 
 /**
- * Loads and validates the watcher config. The password and the one-time application code may
- * live in the file (then the file must be 0600) or in ZORIA_PASSWORD / ZORIA_INVITATION. Nothing here is ever written into the repository.
+ * Loads and validates the watcher config. Password and one-time application code are not
+ * required here: they live in the secrets file or environment and are read when used. Nothing here is ever written into the repository.
  */
-export function loadConfig(path = defaultConfigPath(), options: { requireSecrets?: boolean } = {}): WatcherConfig {
-  const requireSecrets = options.requireSecrets ?? true;
+export function loadConfig(path = defaultConfigPath()): WatcherConfig {
   const configPath = resolve(expandHome(path));
   const raw = readIfExists(configPath);
   if (raw === null) throw new ConfigError(`нет файла конфигурации ${configPath} (образец: apps/watcher/watcher.example.json)`);
@@ -75,37 +87,37 @@ export function loadConfig(path = defaultConfigPath(), options: { requireSecrets
   const mode = field(obj, 'mode') ?? 'watch';
   if (mode !== 'watch' && mode !== 'register') throw new ConfigError('"mode": "watch" или "register"');
 
-  let account: RegisterRequest | null = null;
+  let account: AccountProfile | null = null;
   const acc = field(obj, 'account');
   if (acc !== undefined && acc !== null) {
     if (typeof acc !== 'object' || Array.isArray(acc)) throw new ConfigError('"account" должен быть объектом');
     const a = acc as Record<string, unknown>;
-    const password = process.env.ZORIA_PASSWORD ?? optString(a, 'password') ?? '';
-    const invitation = (process.env.ZORIA_INVITATION ?? optString(a, 'invitation') ?? '').trim();
-    if ((optString(a, 'password') !== null || optString(a, 'invitation') !== null) && isExposed(configPath)) {
+    const inlinePassword = optString(a, 'password');
+    const inlineInvitation = optString(a, 'invitation');
+    if ((inlinePassword !== null || inlineInvitation !== null) && isExposed(configPath)) {
       throw new ConfigError(`${configPath} содержит пароль или код заявки и доступен другим пользователям: chmod 600 ${configPath}`);
     }
     const langRaw = optString(a, 'lang') ?? 'uk';
     if (langRaw !== 'uk' && langRaw !== 'en') throw new ConfigError('"account.lang": "uk" или "en"');
     const lang: Lang = langRaw;
-    const draft = {
-      username: normalizeUsername(optString(a, 'username') ?? ''),
-      displayName: optString(a, 'displayName') ?? '',
-      password,
-      invitation,
-      repositoryUrl: optString(a, 'repositoryUrl') ?? '',
+    const username = normalizeUsername(optString(a, 'username') ?? '');
+    const displayName = optString(a, 'displayName') ?? '';
+    const repositoryUrl = optString(a, 'repositoryUrl') ?? '';
+    // Secrets are checked when they are used (secrets.ts), not here: the code may arrive later.
+    const first = [
+      ['username', checkUsername(username)],
+      ['displayName', checkDisplayName(displayName)],
+      ['repositoryUrl', checkRepository(repositoryUrl)],
+    ].find(([, error]) => error !== null);
+    if (first) throw new ConfigError(`account.${first[0] ?? ''}: ${first[1] ?? ''}`);
+    const repo = parseRepository(repositoryUrl);
+    account = {
+      username,
+      displayName,
+      repositoryUrl: repo.ok ? repo.slug : repositoryUrl,
       lang,
+      inline: { ...(inlinePassword !== null ? { password: inlinePassword } : {}), ...(inlineInvitation !== null ? { invitation: inlineInvitation } : {}) },
     };
-    const errors = checkDraft(draft);
-    // `check` only reads the ether: password and code may still be missing then.
-    if (!requireSecrets) {
-      delete errors.password;
-      delete errors.invitation;
-    }
-    const first = Object.entries(errors)[0];
-    if (first) throw new ConfigError(`account.${first[0]}: ${first[1]}`);
-    const repo = parseRepository(draft.repositoryUrl);
-    account = { ...draft, repositoryUrl: repo.ok ? repo.slug : draft.repositoryUrl };
   }
   if (mode === 'register' && account === null) throw new ConfigError('mode "register" требует "account"');
 
@@ -133,5 +145,6 @@ export function loadConfig(path = defaultConfigPath(), options: { requireSecrets
     },
     stateDir,
     configPath,
+    secretsFile: resolve(expandHome(optString(obj, 'secretsFile') ?? join(homedir(), '.config', 'zoria', 'watcher.env'))),
   };
 }

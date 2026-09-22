@@ -15,8 +15,8 @@ Type=simple
 ExecStart=/usr/bin/env node "%h/Documents/zoria /apps/watcher/src/main.ts" run
 Restart=always
 RestartSec=10
-# ZORIA_PASSWORD and ZORIA_INVITATION (0600 file, never in the repository):
-EnvironmentFile=%h/.config/zoria/watcher.env
+# Password and code are read by the watcher itself from ~/.config/zoria/watcher.env (0600)
+# each time it needs them, so filling the file later needs no restart.
 NoNewPrivileges=yes
 
 [Install]
