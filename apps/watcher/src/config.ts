@@ -53,7 +53,8 @@ function optString(obj: Record<string, unknown>, key: string): string | null {
  * Loads and validates the watcher config. The password and the one-time application code may
  * live in the file (then the file must be 0600) or in ZORIA_PASSWORD / ZORIA_INVITATION. Nothing here is ever written into the repository.
  */
-export function loadConfig(path = defaultConfigPath()): WatcherConfig {
+export function loadConfig(path = defaultConfigPath(), options: { requireSecrets?: boolean } = {}): WatcherConfig {
+  const requireSecrets = options.requireSecrets ?? true;
   const configPath = resolve(expandHome(path));
   const raw = readIfExists(configPath);
   if (raw === null) throw new ConfigError(`нет файла конфигурации ${configPath} (образец: apps/watcher/watcher.example.json)`);
@@ -96,6 +97,11 @@ export function loadConfig(path = defaultConfigPath()): WatcherConfig {
       lang,
     };
     const errors = checkDraft(draft);
+    // `check` only reads the ether: password and code may still be missing then.
+    if (!requireSecrets) {
+      delete errors.password;
+      delete errors.invitation;
+    }
     const first = Object.entries(errors)[0];
     if (first) throw new ConfigError(`account.${first[0]}: ${first[1]}`);
     const repo = parseRepository(draft.repositoryUrl);
