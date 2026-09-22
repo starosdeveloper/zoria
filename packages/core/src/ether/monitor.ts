@@ -85,7 +85,12 @@ export class EtherMonitor {
   }
 
   private transportFailure(failure: Failure): TickOutcome {
-    this.tracker.apply({ type: 'transport' });
+    // Only 503 means a silent node: noise may fake 500/502/504 bodies with real codes, never 503.
+    if (failure.kind === 'server' && failure.status === 503 && failure.code !== null) {
+      this.tracker.apply({ type: 'silent', code: failure.code, retryAfterSec: failure.retryAfterSec, atLocalMs: Date.now() });
+    } else {
+      this.tracker.apply({ type: 'transport' });
+    }
     this.emit({ verdict: { kind: 'transport', failure }, fresh: false, phaseChanged: false, state: this.tracker.state });
     if (failure.kind === 'silenced') return { next: 'at', at: failure.until };
     return { next: 'backoff' };

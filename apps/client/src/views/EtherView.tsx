@@ -17,6 +17,7 @@ const NOISE_LABEL = {
   'unknown-key': 'чужой ключ',
   'bad-frame': 'кадр не по схеме',
   transport: 'обрыв / тайм-аут',
+  silent: 'узел молчит (503)',
 } as const;
 
 export function EtherView({ s, model }: { s: Snapshot; model: AppModel }) {
@@ -42,13 +43,21 @@ export function EtherView({ s, model }: { s: Snapshot; model: AppModel }) {
       >
         <div className="phase">
           <span className={`phase-dot phase-${ether.phase}`} />
-          <strong>{PHASE_LABEL[ether.phase]}</strong>
+          <strong>{ether.phase === 'unknown' && ether.silentNode ? 'узел молчит' : PHASE_LABEL[ether.phase]}</strong>
           {ether.latestAt ? (
             <span className="muted">
               последний кадр: <LocalTime value={ether.latestAt} />
             </span>
           ) : null}
         </div>
+
+        {ether.silentNode ? (
+          <p className="muted">
+            Сервер отвечает <code>{ether.silentNode.code}</code>: узел ещё не в эфире или перезапускается. Это не сбой клиента —
+            повторяем {ether.silentNode.retryAfterSec !== null ? `раз в ${Math.max(15, ether.silentNode.retryAfterSec)} с` : 'с паузой'}. Молчит с{' '}
+            <LocalTime value={ether.silentNode.sinceLocalMs} />.
+          </p>
+        ) : null}
 
         {ether.phase === 'static' && toOpen !== null ? (
           <div className="countdown">
@@ -93,6 +102,8 @@ export function EtherView({ s, model }: { s: Snapshot; model: AppModel }) {
               <>
                 <code>{s.key.id}</code> {s.key.trust === 'pinned' ? <Badge tone="ok">сверен с ТЗ</Badge> : <Badge tone="warn">не сверен с ТЗ</Badge>}
               </>
+            ) : ether.silentNode ? (
+              <Badge tone="muted">придёт, когда узел выйдет в эфир</Badge>
             ) : (
               <Badge tone="bad">{s.keyError ?? 'загрузка…'}</Badge>
             )}

@@ -51,6 +51,7 @@ export class Watcher {
   private registrationStopped = false;
   private stoppedStamp: string | null = null;
   private secretsComplainedAt = 0;
+  private silenceLoggedAt = 0;
   private accountLoop: Promise<void> | null = null;
   private lastSummary: Summary | null = null;
   private lastRepository: Repository | null = null;
@@ -426,7 +427,16 @@ export class Watcher {
       this.journal.write('info', 'fragment', { n: o.verdict.frame.fragment.n, of: o.verdict.frame.fragment.of, collected: s.fragments.size });
     }
     if (o.verdict.kind === 'transport') {
-      this.journal.write('warn', 'ether-transport', failureData(o.verdict.failure));
+      const silent = s.silentNode;
+      if (silent) {
+        // 503 stopping repeats every Retry-After: log the start, then a reminder every 10 minutes.
+        if (silent.sinceLocalMs === silent.lastLocalMs || Date.now() - this.silenceLoggedAt >= 10 * 60_000) {
+          this.silenceLoggedAt = Date.now();
+          this.journal.write('info', 'node-silent', { code: silent.code, retryAfterSec: silent.retryAfterSec, since: new Date(silent.sinceLocalMs).toISOString() });
+        }
+      } else {
+        this.journal.write('warn', 'ether-transport', failureData(o.verdict.failure));
+      }
     }
     const total = Object.values(s.counters).reduce((a, b) => a + b, 0);
     if (total > 0 && total % 40 === 0) this.journal.write('info', 'ether-counters', { ...s.counters, phase: s.phase });

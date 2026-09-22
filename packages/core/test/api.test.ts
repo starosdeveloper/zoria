@@ -251,7 +251,8 @@ describe('silent node: 503 stopping (FAQ, spec §5.5)', () => {
     expect(first.next).toBe('at');
     if (first.next === 'at') expect(first.at - Date.now()).toBeGreaterThanOrEqual(29_000);
     expect(monitor.state.counters.malformed).toBe(0);
-    expect(monitor.state.counters.transport).toBe(1);
+    expect(monitor.state.counters.silent).toBe(1);
+    expect(monitor.state.silentNode?.code).toBe('stopping');
     expect(keys.known).toHaveLength(0);
 
     now += 61_000; // key retry cooldown passed; the node is on air now
@@ -259,5 +260,6 @@ describe('silent node: 503 stopping (FAQ, spec §5.5)', () => {
     expect(second).toEqual({ next: 'interval' });
     expect(keys.known[0]?.trust).toBe('pinned');
     expect(monitor.state.phase).toBe('static');
+    expect(monitor.state.silentNode).toBeNull();
   });
 });

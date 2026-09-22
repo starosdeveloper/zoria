@@ -21,7 +21,9 @@ export interface EtherSnapshot {
   /** serverTime − deviceTime, ms; add to Date.now() to get server time. */
   clockOffsetMs: number;
   lastSignalLocalMs: number | null;
-  counters: Readonly<Record<'signal' | 'stale' | NoiseReason | 'transport', number>>;
+  counters: Readonly<Record<'signal' | 'stale' | NoiseReason | 'transport' | 'silent', number>>;
+  /** The node answers with a stable 5xx code (503 stopping) instead of frames: not on air yet or restarting. */
+  silentNode: { code: string; retryAfterSec: number | null; sinceLocalMs: number; lastLocalMs: number } | null;
 }
 
 export const INITIAL_ETHER: EtherSnapshot = {
@@ -38,13 +40,15 @@ export const INITIAL_ETHER: EtherSnapshot = {
   fragmentsOf: null,
   clockOffsetMs: 0,
   lastSignalLocalMs: null,
-  counters: { signal: 0, stale: 0, malformed: 0, 'unknown-key': 0, 'bad-seal': 0, 'bad-frame': 0, transport: 0 },
+  counters: { signal: 0, stale: 0, malformed: 0, 'unknown-key': 0, 'bad-seal': 0, 'bad-frame': 0, transport: 0, silent: 0 },
+  silentNode: null,
 };
 
 export type EtherEvent =
   | { type: 'signal'; frame: Frame; receivedAtLocalMs: number }
   | { type: 'noise'; reason: NoiseReason }
-  | { type: 'transport' };
+  | { type: 'transport' }
+  | { type: 'silent'; code: string; retryAfterSec: number | null; atLocalMs: number };
 
 /**
  * Pure reducer over verified frames (spec §5.2 step 5, CL-05). Echo and delayed frames are
@@ -65,6 +69,19 @@ export class EtherTracker {
       this.snapshot = { ...prev, counters: { ...prev.counters, [event.reason]: prev.counters[event.reason] + 1 } };
       return { fresh: false, phaseChanged: false };
     }
+    if (event.type === 'silent') {
+      this.snapshot = {
+        ...prev,
+        silentNode: {
+          code: event.code,
+          retryAfterSec: event.retryAfterSec,
+          sinceLocalMs: prev.silentNode?.sinceLocalMs ?? event.atLocalMs,
+          lastLocalMs: event.atLocalMs,
+        },
+        counters: { ...prev.counters, silent: prev.counters.silent + 1 },
+      };
+      return { fresh: false, phaseChanged: false };
+    }
     if (event.type === 'transport') {
       this.snapshot = { ...prev, counters: { ...prev.counters, transport: prev.counters.transport + 1 } };
       return { fresh: false, phaseChanged: false };
@@ -78,6 +95,8 @@ export class EtherTracker {
 
     const base: EtherSnapshot = {
       ...prev,
+      // Any sealed frame means the node is on air again.
+      silentNode: null,
       fragments,
       fragmentsOf,
       clockOffsetMs,

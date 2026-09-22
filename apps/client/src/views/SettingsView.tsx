@@ -26,7 +26,7 @@ export function SettingsView({ s, model }: { s: Snapshot; model: AppModel }) {
           <dd>{s.server.fingerprint ? <code className="wrap">{s.server.fingerprint}</code> : <Badge tone="warn">не задан (.env)</Badge>}</dd>
           <dt>Ключ сервера</dt>
           <dd>
-            {s.key ? <code className="wrap">{s.key.fingerprint}</code> : (s.keyError ?? '—')}
+            {s.key ? <code className="wrap">{s.key.fingerprint}</code> : s.ether.silentNode ? 'придёт, когда узел выйдет в эфир' : (s.keyError ?? '—')}
           </dd>
           <dt>Часовой пояс</dt>
           <dd>{localZoneName()}</dd>
