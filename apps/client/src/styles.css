@@ -66,6 +66,12 @@ code {
 code.wrap {
   word-break: break-all;
 }
+.panel code,
+.panel a,
+.banner code,
+.message code {
+  overflow-wrap: anywhere;
+}
 .big-code {
   font-size: 1.1em;
   font-weight: 600;
@@ -310,6 +316,11 @@ input[type='radio'] {
   font-weight: 600;
   white-space: nowrap;
 }
+/* Inside value lists a badge may carry a whole sentence (key errors): let it wrap. */
+.facts .badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .badge-ok {
   background: var(--ok-bg);
   color: var(--ok);
@@ -427,6 +438,8 @@ input[type='radio'] {
 .facts dd {
   margin: 0;
   min-width: 0;
+  /* URLs, fingerprints and ids are long unbroken strings: wrap them inside the panel. */
+  overflow-wrap: anywhere;
 }
 
 .counters,

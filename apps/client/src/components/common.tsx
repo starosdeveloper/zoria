@@ -27,6 +27,21 @@ export function useNow(ms = 1000): number {
   return now;
 }
 
+/** A URL that wraps after `/` instead of mid-word (the CSS `anywhere` wrap stays as a last resort). */
+export function BreakableUrl({ url }: { url: string }) {
+  const parts = url.split(/(?<=\/)/);
+  return (
+    <code>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {part}
+          {i < parts.length - 1 ? <wbr /> : null}
+        </span>
+      ))}
+    </code>
+  );
+}
+
 export function Badge({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'info' | 'muted'; children: ReactNode }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }

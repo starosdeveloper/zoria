@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DEFAULT_SERVERS, localZoneName, type ServerId } from '@zoria/core';
 import type { AppModel, Snapshot } from '../state/model.ts';
-import { Badge, LocalTime, Panel, useNow } from '../components/common.tsx';
+import { Badge, BreakableUrl, LocalTime, Panel, useNow } from '../components/common.tsx';
 
 export function SettingsView({ s, model }: { s: Snapshot; model: AppModel }) {
   const now = useNow(5000);
@@ -20,7 +20,7 @@ export function SettingsView({ s, model }: { s: Snapshot; model: AppModel }) {
         <dl className="facts">
           <dt>Адрес API</dt>
           <dd>
-            <code>{s.server.apiBase}</code>
+            <BreakableUrl url={s.server.apiBase} />
           </dd>
           <dt>Отпечаток из ТЗ</dt>
           <dd>{s.server.fingerprint ? <code className="wrap">{s.server.fingerprint}</code> : <Badge tone="warn">не задан (.env)</Badge>}</dd>
