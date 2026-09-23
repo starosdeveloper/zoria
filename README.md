@@ -74,6 +74,7 @@ VITE_ZORIA_STAND_FINGERPRINT=f3a436df65614f08635f18fe0f64f145285203f1faa2905ecb2
 
 ```bash
 pnpm stand-check --repo <ваш owner/repo>                 # запускать до :20 UTC, чтобы поймать провозвестника
+pnpm stand-check --repo <owner/repo> --invitation <код>  # если учебный код стенда сменили
 pnpm stand-check --repo <owner/repo> --jam-test          # плюс S8: намеренно превысить лимит (только стенд)
 ```
 

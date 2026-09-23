@@ -3,7 +3,8 @@
 // listens to the noise, checks the harbinger countdown, and in the window runs field errors,
 // registration, a lost-answer retry, session expiry, developer echo, logout and the roll.
 //
-//   node scripts/stand-check.ts --repo <owner/repo> [--fingerprint <hex>] [--api <url>] [--jam-test]
+//   node scripts/stand-check.ts --repo <owner/repo> [--fingerprint <hex>] [--api <url>]
+//                               [--invitation <code>] [--jam-test]
 //
 // Stand rules (§6): hour cycle UTC — :00–:30 noise, harbinger from :20, window :30–:50,
 // code STAND-2026, any repository of yours, daily wipe 03:05 UTC. Each run registers one
@@ -37,12 +38,14 @@ const { values } = parseArgs({
     api: { type: 'string', default: DEFAULT_SERVERS.stand.apiBase },
     repo: { type: 'string' },
     fingerprint: { type: 'string' },
+    invitation: { type: 'string' },
     'jam-test': { type: 'boolean', default: false },
     'max-wait-min': { type: 'string', default: '70' },
   },
 });
 
-const STAND_CODE = 'STAND-2026';
+// The stand's own /public/config calls STAND-2026 valid for everyone; --invitation overrides it.
+const STAND_CODE = values.invitation ?? 'STAND-2026';
 const apiBase = values.api.replace(/\/+$/, '');
 const repo = parseRepository(values.repo ?? '');
 if (!repo.ok) {
