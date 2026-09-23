@@ -6,6 +6,7 @@ import {
   compareCodePoints,
   drandRoundTime,
   drawPermutation,
+  DRAW_COMMITMENT,
   DRAW_ROUND,
   groupSizes,
   lotOf,
@@ -125,5 +126,11 @@ describe('draw (scoring appendix A)', () => {
     const salt = 'f'.repeat(64);
     const expected = createHash('sha256').update(Buffer.concat([Buffer.from('zaria-tournament-lot-v1'), Buffer.from([0]), Buffer.from(salt), Buffer.from([0]), Buffer.from('north')])).digest('hex');
     expect(await lotOf(salt, 'north')).toBe(expected);
+  });
+});
+
+describe('published values', () => {
+  it('commitment from ТЗ §7 is 32 bytes of hex', () => {
+    expect(DRAW_COMMITMENT).toMatch(/^[0-9a-f]{64}$/);
   });
 });

@@ -25,7 +25,7 @@ export interface WatcherConfig {
   account: AccountProfile | null;
   /** 0600 file with ZORIA_PASSWORD / ZORIA_INVITATION, re-read whenever the secrets are needed. */
   secretsFile: string;
-  notify: { url: string | null; telegram: { botToken: string; chatId: string } | null };
+  notify: { url: string | null; telegram: { botToken: string; chatId: string } | null; desktop: boolean };
   stateDir: string;
   configPath: string;
 }
@@ -142,6 +142,8 @@ export function loadConfig(path = defaultConfigPath()): WatcherConfig {
     notify: {
       url: optString(n, 'url'),
       telegram: botToken && chatId ? { botToken, chatId } : null,
+      // Desktop bubbles are on unless switched off: a watcher nobody hears is no use.
+      desktop: field(n, 'desktop') !== false,
     },
     stateDir,
     configPath,

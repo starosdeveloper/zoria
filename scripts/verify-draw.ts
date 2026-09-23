@@ -16,6 +16,7 @@ import {
   DRAND_QUICKNET_CHAIN,
   drandRoundTime,
   drawPermutation,
+  DRAW_COMMITMENT,
   DRAW_ROUND,
   groupSizes,
   saltOf,
@@ -70,7 +71,7 @@ async function fetchBeacon(base: string, round: number): Promise<Beacon | null> 
 }
 
 const secret = asString(values.secret ?? pick(draw, 'secret', 'reveal', 'commit.secret', 'secretHex'));
-const commitment = asString(values.commit ?? pick(draw, 'commitment', 'commit', 'commit.hash', 'secretHash'));
+const commitment = asString(values.commit ?? pick(draw, 'commitment', 'commit', 'commit.hash', 'secretHash')) ?? DRAW_COMMITMENT;
 const round = Number(values.round ?? pick(draw, 'round', 'drand.round', 'beacon.round') ?? DRAW_ROUND);
 const publishedRandomness = asString(pick(draw, 'randomness', 'drand.randomness', 'beacon.randomness'));
 const publishedSalt = asString(pick(draw, 'salt'));
@@ -87,7 +88,7 @@ if (!secret) {
   process.exit(1);
 }
 
-verdict(commitment ? (await commitmentOf(secret)) === commitment : null, 'обязательство SHA-256(секрет) = хеш от 21.09', commitment ? '' : '(передайте --commit)');
+verdict((await commitmentOf(secret)) === commitment, 'обязательство SHA-256(секрет) = хеш из ТЗ §7', commitment === DRAW_COMMITMENT ? 'значение из ТЗ' : 'значение из --commit/draw.json');
 
 // A.0: take the round from two mirrors and require they agree.
 const beacons = (await Promise.all(DRAND_MIRRORS.map((m) => fetchBeacon(m, round)))).filter((b): b is Beacon => b !== null);

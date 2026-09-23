@@ -40,6 +40,7 @@ cp apps/watcher/watcher.example.json ~/.config/zoria/watcher.json
 chmod 600 ~/.config/zoria/watcher.json        # в файле пароль — без 0600 наблюдатель не запустится
 $EDITOR ~/.config/zoria/watcher.json          # server, fingerprint, mode, account, notify
 
+pnpm watcher ready        # одна проверка готовности к просвету
 pnpm watcher selftest     # контрольные кадры A–D офлайн
 pnpm watcher check        # ключ + один кадр эфира с выбранного сервера
 pnpm watcher run          # долгий режим
@@ -50,7 +51,7 @@ pnpm watcher run          # долгий режим
 - `account.repositoryUrl` — любой ваш **частный** репозиторий на GitHub.
 - Пароль и код живут в `~/.config/zoria/watcher.env` (0600): `ZORIA_PASSWORD=…`, `ZORIA_INVITATION=…`. Наблюдатель перечитывает файл каждый раз, когда они нужны, поэтому код можно вписать после запуска — перезапуск не нужен. Пока кода нет, он предупреждает при старте, при провозвестнике и в просвете.
 - Состояние (токен, ключ, глушение, журнал `events.jsonl`, `heartbeat`) лежит в `~/.local/state/zoria/<server>/` с правами 0600. Сюда попадают и `X-Request-Id` для сообщения о сбое.
-- `notify.url` — POST текста на любой вебхук (например, ntfy.sh); `notify.telegram` — бот и чат.
+- Уведомления: на рабочий стол через `notify-send` (включены всегда, отключаются `"desktop": false`), плюс `notify.url` — POST текста на любой вебхук (например, ntfy.sh) и `notify.telegram` — бот и чат.
 - Для работы круглосуточно есть systemd-юнит: `scripts/zoria-watcher.service`; инструкция в шапке файла.
 
 Запасной вариант без наблюдателя: `scripts/register.sh <логин> "<имя>" <owner/repo>` читает пароль с терминала и при потерянном ответе сначала проверяет вход, а не регистрирует второй раз.
@@ -85,7 +86,7 @@ pnpm stand-check --repo <owner/repo> --jam-test          # плюс S8: наме
 Своя реализация приложения А оценивания, без кода организаторов:
 
 ```bash
-pnpm verify-draw --draw draw.json --commit <хеш от 21.09> --me <логин>
+pnpm verify-draw --draw draw.json --me <логин>   # обязательство из ТЗ §7 уже зашито
 # или по частям:
 pnpm verify-draw --secret <64 hex> --logins logins.txt --me <логин>
 ```

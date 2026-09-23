@@ -13,6 +13,8 @@ Wants=network-online.target
 Type=simple
 # Quoted: the project directory name ends with a space.
 ExecStart=/usr/bin/env node "%h/Documents/zoria /apps/watcher/src/main.ts" run
+# Desktop notifications need the session bus even when started before the graphical session.
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
 Restart=always
 RestartSec=10
 # Password and code are read by the watcher itself from ~/.config/zoria/watcher.env (0600)

@@ -9,6 +9,8 @@ export const DRAND_QUICKNET_GENESIS = 1_692_803_367;
 export const DRAND_QUICKNET_PERIOD = 3;
 /** Announced round (scoring A.0, calendar): 26.09 11:00 Kyiv. Moves only by a news item if the window is extended. */
 export const DRAW_ROUND = 32_535_412;
+/** Organizers' commitment published 21.09 (ТЗ части 1 §7): SHA-256 of their 32 secret bytes. */
+export const DRAW_COMMITMENT = '49f5304dd735a00f4999ff518b4dc6f85e3288c828b71853b786e572bac73ab0';
 export const DRAND_MIRRORS = ['https://api.drand.sh', 'https://api2.drand.sh', 'https://api3.drand.sh', 'https://drand.cloudflare.com'];
 
 const STREAM_TAG = 'zaria-tournament-v1';

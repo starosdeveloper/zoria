@@ -2,29 +2,38 @@
 // Zoria.net watcher: listens to the ether, registers in the window, then follows the account.
 //   node apps/watcher/src/main.ts run        — long-running (systemd unit in scripts/)
 //   node apps/watcher/src/main.ts check      — fetch key + one ether frame, print verdict
+//   node apps/watcher/src/main.ts ready      — one readiness report before the window
 //   node apps/watcher/src/main.ts selftest   — control frames A–D offline, no network
 
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import {
   ApiClient,
   describeKeyError,
   EtherMonitor,
   EtherTracker,
+  ETHER_INTERVAL_MS,
   formatLocal,
   HttpTransport,
   KeyRing,
   localZoneName,
   MemoryStore,
+  sleep,
   RequestGate,
   verifyEnvelopeText,
 } from '@zoria/core';
 import { ConfigError, loadConfig } from './config.ts';
-import { ensurePrivateDir } from './files.ts';
+import { resolveSecrets } from './secrets.ts';
+import { ensurePrivateDir, readIfExists } from './files.ts';
 import { Journal, makeNotifier } from './log.ts';
 import { Watcher } from './watcher.ts';
 
-async function run(): Promise<number> {
+const run = promisify(execFile);
+
+async function runWatcher(): Promise<number> {
   const config = loadConfig(process.argv[3]);
   ensurePrivateDir(config.stateDir);
   const journal = new Journal(config.stateDir);
@@ -71,6 +80,69 @@ async function check(): Promise<number> {
   return key ? 0 : 1;
 }
 
+/**
+ * One command that answers «готов ли я к просвету»: config, secrets, pinned key against the
+ * live node, ether, the .zoria marker, the running service and its heartbeat.
+ */
+async function ready(): Promise<number> {
+  const config = loadConfig(process.argv[3]);
+  let bad = 0;
+  const say = (ok: boolean | null, label: string, detail = ''): void => {
+    if (ok === false) bad++;
+    console.log(`${ok === null ? 'skip' : ok ? 'ok  ' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
+  };
+
+  say(config.server === 'prod', 'сервер', `${config.apiBase} (${config.server})`);
+  say(config.mode === 'register', 'режим', config.mode);
+  const account = config.account;
+  say(account !== null, 'аккаунт', account ? `${account.username} / ${account.displayName} / ${account.repositoryUrl}` : 'нет в конфиге');
+
+  const secrets = account ? resolveSecrets(config.secretsFile, account.inline, 'register') : { ok: false as const, problems: ['нет аккаунта'] };
+  say(secrets.ok, 'пароль и код заявки', secrets.ok ? config.secretsFile : secrets.problems.join('; '));
+
+  const gate = new RequestGate({ store: new MemoryStore(), storeKey: 'gate' });
+  const api = new ApiClient({ transport: new HttpTransport(config.apiBase, gate), token: () => null, etherOpen: () => false });
+  const keys = new KeyRing(() => api.etherKey(), config.fingerprint);
+  await keys.reload();
+  const key = keys.known[0];
+  say(config.fingerprint !== null, 'отпечаток из ТЗ закреплён', config.fingerprint ?? 'не задан');
+  say(key ? key.trust === 'pinned' : null, 'ключ узла сверен с ТЗ', key ? key.fingerprint : `узел не отдал ключ: ${keys.error ?? '?'}`);
+
+  // Before the window most answers are noise, so give the ether a few tries at the polling floor.
+  const monitor = new EtherMonitor(api, keys);
+  for (let attempt = 0; attempt < 3 && monitor.state.latestAt === null; attempt++) {
+    if (attempt > 0) await sleep(ETHER_INTERVAL_MS + 1_000);
+    await monitor.poll('/ether');
+  }
+  const s = monitor.state;
+  const silent = s.silentNode;
+  say(s.latestAt !== null, 'эфир: подписанный кадр', s.latestAt ? `фаза ${s.phase}, at ${s.latestAt}` : silent ? `узел молчит (${silent.code})` : 'три попытки — только помехи');
+  if (s.opensAtMs !== null) say(true, 'провозвестник', `${formatLocal(s.opensAtMs)} ${localZoneName()}`);
+  if (s.window) say(s.phase === 'window', 'просвет', `${formatLocal(s.window.opensAt)} — ${formatLocal(s.window.closesAt)} ${localZoneName()}`);
+
+  // fileURLToPath, not .pathname: the project directory name contains a space.
+  const marker = readIfExists(fileURLToPath(new URL('../../../.zoria', import.meta.url)));
+  const markerLogin = marker?.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? null;
+  say(markerLogin !== null && markerLogin.toLowerCase() === account?.username, '.zoria в корне репозитория', markerLogin ?? 'файла нет');
+
+  const session = readIfExists(join(config.stateDir, 'session.json'));
+  say(session !== null && session !== 'null' ? true : null, 'аккаунт в сети уже создан', session && session !== 'null' ? 'сессия есть' : 'ещё нет — так и должно быть до просвета');
+
+  const beat = readIfExists(join(config.stateDir, 'heartbeat'));
+  const beatAge = beat ? (Date.now() - Date.parse(beat.trim())) / 1000 : null;
+  say(beatAge !== null && beatAge < 120, 'наблюдатель жив', beatAge === null ? 'нет heartbeat' : `последний тик ${Math.round(beatAge)} с назад`);
+
+  try {
+    const { stdout } = await run('systemctl', ['--user', 'is-active', 'zoria-watcher']);
+    say(stdout.trim() === 'active', 'сервис zoria-watcher', stdout.trim());
+  } catch (error) {
+    say(false, 'сервис zoria-watcher', String(error).split('\n')[0] ?? '');
+  }
+
+  console.log(bad === 0 ? '\nготов к просвету' : `\nне готов: ${bad}`);
+  return bad === 0 ? 0 : 1;
+}
+
 /** Offline check of the seal path on the spec's control frames (spec §6, «Контрольные кадры A–D»). */
 async function selftest(): Promise<number> {
   const fixtures = new URL('../../../packages/core/test/fixtures/', import.meta.url);
@@ -106,11 +178,11 @@ async function selftest(): Promise<number> {
   return failed === 0 ? 0 : 1;
 }
 
-const commands: Record<string, () => Promise<number>> = { run, check, selftest };
+const commands: Record<string, () => Promise<number>> = { run: runWatcher, check, selftest, ready };
 const name = process.argv[2] ?? 'run';
 const command = commands[name];
 if (!command) {
-  console.error(`usage: node apps/watcher/src/main.ts <run|check|selftest> [config.json]`);
+  console.error(`usage: node apps/watcher/src/main.ts <run|check|ready|selftest> [config.json]`);
   process.exit(2);
 }
 command().then(

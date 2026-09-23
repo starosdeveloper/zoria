@@ -1,6 +1,10 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { appendPrivate, writePrivateAtomic } from './files.ts';
 import type { WatcherConfig } from './config.ts';
+
+const run = promisify(execFile);
 
 export type Level = 'info' | 'warn' | 'alert';
 
@@ -41,9 +45,18 @@ export class Journal {
   }
 }
 
-/** Alerts go to a webhook (ntfy-style POST of plain text) and/or Telegram. Failures are logged, never thrown. */
+/**
+ * Alerts go to a webhook (ntfy-style POST of plain text), Telegram and the desktop.
+ * The desktop channel needs no setup and works even with no network to the outside;
+ * it is the fallback that keeps a silent watcher from being unnoticed. Failures are
+ * logged, never thrown.
+ */
 export function makeNotifier(config: WatcherConfig, journal: Journal): Notifier {
-  const targets: ((text: string) => Promise<Response>)[] = [];
+  const targets: ((text: string) => Promise<unknown>)[] = [];
+  if (config.notify.desktop) {
+    // urgency=critical keeps the bubble on screen until it is dismissed.
+    targets.push((text) => run('notify-send', ['--urgency=critical', '--app-name=Зоря.нет', 'Зоря.нет', text]));
+  }
   const { url, telegram } = config.notify;
   if (url) {
     targets.push((text) =>
@@ -65,8 +78,9 @@ export function makeNotifier(config: WatcherConfig, journal: Journal): Notifier 
       const results = await Promise.allSettled(targets.map((t) => t(`[${config.server}] ${text}`)));
       for (const r of results) {
         if (r.status === 'rejected') journal.write('warn', 'notify-failed', { error: String(r.reason) });
-        else if (!r.value.ok) journal.write('warn', 'notify-failed', { status: r.value.status });
+        else if (r.value instanceof Response && !r.value.ok) journal.write('warn', 'notify-failed', { status: r.value.status });
       }
+      if (targets.length === 0) journal.write('warn', 'notify-nowhere', { hint: 'ни один канал уведомлений не настроен' });
     },
   };
 }
