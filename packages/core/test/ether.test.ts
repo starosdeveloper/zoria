@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnvelope, verifyEnvelopeText } from '../src/ether/envelope.ts';
+import { parseEnvelope, verifyEnvelopeText, voiceLine } from '../src/ether/envelope.ts';
 import { KeyRing } from '../src/ether/keyring.ts';
 import { EtherTracker } from '../src/ether/state.ts';
 import { fixture, frame, seal, TRAINING_KEY_BODY, trainingRing } from './helpers/training.ts';
@@ -97,6 +97,33 @@ describe('seal checks', () => {
     const { ring } = trainingRing();
     expect(await verifyEnvelopeText(await seal(frame({ v: 2 })), ring)).toEqual({ kind: 'noise', reason: 'bad-frame' });
     expect(await verifyEnvelopeText(await seal(frame({ station: 'x' })), ring)).toEqual({ kind: 'noise', reason: 'bad-frame' });
+  });
+
+  it('accepts the harbinger in any languages, and with no voice at all', async () => {
+    const { ring } = trainingRing();
+    const cases = [
+      { opensIn: 60, text: { uk: 'u', en: 'e' } },
+      { opensIn: 60, text: { uk: 'u', ru: 'r' } },
+      { opensIn: 60, text: { uk: 'u', ru: 'r', en: 'e', xx: 'x' } },
+      { opensIn: 60, text: null },
+      { opensIn: 60 },
+    ];
+    for (const harbinger of cases) {
+      const v = await verifyEnvelopeText(await seal(frame({ harbinger })), ring);
+      expect(v.kind, JSON.stringify(harbinger)).toBe('signal');
+      if (v.kind === 'signal') expect(v.frame.harbinger?.opensIn).toBe(60);
+    }
+    // a voice that is not an object is still a broken frame
+    expect((await verifyEnvelopeText(await seal(frame({ harbinger: { opensIn: 60, text: 'plain' } })), ring)).kind).toBe('noise');
+  });
+
+  it('voiceLine prefers the participant language and falls back', () => {
+    expect(voiceLine({ uk: 'u', en: 'e' })).toBe('u');
+    expect(voiceLine({ uk: 'u', ru: 'r', en: 'e' })).toBe('r');
+    expect(voiceLine({ xx: 'x' })).toBe('x');
+    expect(voiceLine({ uk: 'u', en: 'e' }, ['en'])).toBe('e');
+    expect(voiceLine(null)).toBeNull();
+    expect(voiceLine({})).toBeNull();
   });
 
   it('ignores unknown fields in frame and envelope (CL-06)', async () => {

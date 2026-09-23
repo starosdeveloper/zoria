@@ -475,7 +475,7 @@ bot/
 - [x] Легенда, FAQ, объявления, редакции ТЗ и спецификации от 22.09, `part1.openapi.yaml` 1.1.0 → `docs/`, индекс в `docs/README.md`
 - [x] Регистрация под контракт 1.1.0: `invitation`, частный репозиторий, логин строчными
 - [x] Проверка жеребьёвки по приложению А (`pnpm verify-draw`), сверена с живым drand quicknet
-- [ ] Код заявки от организаторов → в `watcher.json` (`account.invitation`)
+- [x] Код заявки получен 23.09 и вписан в `~/.config/zoria/watcher.env`
 - [ ] Отпечаток ключа печати → `.env` и `watcher.json`; хеш секрета жеребьёвки — записать
 - [ ] Свой частный репозиторий; пригласить `zoria-net-bot`; положить `.zoria` (бот увидит приглашение после регистрации)
 - [x] Monorepo + lockfile + TS strict + ESLint + Vitest + конфиг gitleaks + CI
@@ -490,4 +490,4 @@ bot/
 - [ ] Два полных цикла **настоящего** стенда: `pnpm stand-check --repo … --jam-test` (стенд поднимут до 23.09)
 - [x] Watcher на проде в режиме `register` как systemd-сервис (с 22.09, linger включён); пароль в `watcher.env`, код заявки подхватит без перезапуска
 - [x] Клиент и наблюдатель различают «узел молчит» (503 `stopping`) и обрыв связи
-- [ ] Код заявки → `~/.config/zoria/watcher.env` (`ZORIA_INVITATION=`)
+- [x] Код заявки → `~/.config/zoria/watcher.env`

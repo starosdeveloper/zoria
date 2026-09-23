@@ -1,4 +1,4 @@
-import { formatDuration, localZoneName } from '@zoria/core';
+import { formatDuration, localZoneName, voiceLine } from '@zoria/core';
 import type { AppModel, Snapshot } from '../state/model.ts';
 import { Badge, LocalTime, Panel, useNow } from '../components/common.tsx';
 
@@ -66,7 +66,7 @@ export function EtherView({ s, model }: { s: Snapshot; model: AppModel }) {
             <div>
               <LocalTime value={ether.opensAtMs} zone />
             </div>
-            {ether.harbinger ? <blockquote className="voice">{ether.harbinger.text.ru}</blockquote> : null}
+            {voiceLine(ether.harbinger?.text ?? null) ? <blockquote className="voice">{voiceLine(ether.harbinger?.text ?? null)}</blockquote> : null}
           </div>
         ) : null}
 

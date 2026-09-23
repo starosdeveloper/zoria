@@ -16,6 +16,7 @@ import {
   RequestGate,
   runPoll,
   tryParseJson,
+  voiceLine,
   type EtherObservation,
   type Failure,
   type Repository,
@@ -413,7 +414,7 @@ export class Watcher {
     if (s.opensAtMs !== null && !this.harbingerAnnounced) {
       this.harbingerAnnounced = true;
       const opens = new Date(s.opensAtMs).toISOString();
-      this.journal.write('alert', 'harbinger', { opensAt: opens, local: formatLocal(s.opensAtMs), zone: localZoneName(), text: s.harbinger?.text.ru });
+      this.journal.write('alert', 'harbinger', { opensAt: opens, local: formatLocal(s.opensAtMs), zone: localZoneName(), voice: voiceLine(s.harbinger?.text ?? null) });
       void this.notifier.send(`Провозвестник: просвет откроется ${formatLocal(s.opensAtMs)} (${localZoneName()}), ${opens}.`);
       if (this.config.mode === 'register' && this.config.account && !this.session) {
         const resolved = resolveSecrets(this.config.secretsFile, this.config.account.inline, 'register');

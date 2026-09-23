@@ -2236,7 +2236,7 @@ components:
                   required:
                     - uk
                     - en
-                  description: In-world voice of the harbinger in Ukrainian and Russian; no numbers, only opensIn is mechanics
+                  description: In-world voice of the harbinger in Ukrainian and English; no numbers, only opensIn is mechanics
             - type: "null"
         fragment:
           anyOf:

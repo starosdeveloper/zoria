@@ -4,6 +4,7 @@
 import {
   arrayOf,
   int,
+  optionalNull,
   isRecord,
   isoTime,
   nullable,
@@ -44,10 +45,32 @@ export function parseEnvelope(text: string): Envelope | null {
   return { frame, seal, key };
 }
 
+/**
+ * The station voice, by language code. The contract of 22.09 requires `uk` and `en`, the
+ * client spec's examples show `uk` and `ru`, and `text` itself is optional — only `opensIn`
+ * is mechanics (CL-11). So any set of languages is accepted and unknown ones are kept.
+ */
+const readVoice: Reader<Record<string, string>> = (v) => {
+  if (!isRecord(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [lang, line] of Object.entries(v)) if (typeof line === 'string') out[lang] = line;
+  return out;
+};
+
 export const readHarbinger = object({
   opensIn: int,
-  text: object({ uk: str, ru: str }),
+  text: optionalNull(readVoice),
 });
+
+/** First available line, preferring the participant's language. */
+export function voiceLine(text: Record<string, string> | null, prefer: readonly string[] = ['ru', 'uk', 'en']): string | null {
+  if (!text) return null;
+  for (const lang of prefer) {
+    const line = text[lang];
+    if (line) return line;
+  }
+  return Object.values(text)[0] ?? null;
+}
 export type Harbinger = NonNullable<ReturnType<typeof readHarbinger>>;
 
 export const readWindow = object({ opensAt: isoTime, closesAt: isoTime });
