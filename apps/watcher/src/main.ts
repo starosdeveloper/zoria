@@ -116,7 +116,18 @@ async function ready(): Promise<number> {
   }
   const s = monitor.state;
   const silent = s.silentNode;
-  say(s.latestAt !== null, 'эфир: подписанный кадр', s.latestAt ? `фаза ${s.phase}, at ${s.latestAt}` : silent ? `узел молчит (${silent.code})` : 'три попытки — только помехи');
+  const answered = Object.values(s.counters).reduce((n, c) => n + c, 0) - s.counters.transport;
+  // Before the window most answers are noise and a silent node is its normal state, so
+  // neither is a failure here: only «сервер вообще не отвечает» is.
+  say(
+    s.latestAt !== null ? true : answered > 0 ? null : false,
+    'эфир',
+    s.latestAt
+      ? `подписанный кадр, фаза ${s.phase}, at ${s.latestAt}`
+      : silent
+        ? `узел молчит (${silent.code}) — до просвета это норма, сервис ловит кадры между молчанием`
+        : 'три попытки — только помехи; это норма до просвета, кадры видно в журнале сервиса',
+  );
   if (s.opensAtMs !== null) say(true, 'провозвестник', `${formatLocal(s.opensAtMs)} ${localZoneName()}`);
   if (s.window) say(s.phase === 'window', 'просвет', `${formatLocal(s.window.opensAt)} — ${formatLocal(s.window.closesAt)} ${localZoneName()}`);
 
