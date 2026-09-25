@@ -235,6 +235,7 @@ export class AppModel {
   switchServer(id: ServerId): void {
     if (id === this.snapshot.server.id) return;
     saveServer(id);
+    this.set({ loginError: null });
     this.set({ registration: { status: 'idle', log: [] } });
     this.connect(id);
   }
@@ -445,6 +446,10 @@ export class AppModel {
 
   requireLogin(): void {
     this.set({ loginRequired: true });
+  }
+
+  cancelLogin(): void {
+    this.set({ loginRequired: false, loginError: null });
   }
 
   private dropSession(expired: boolean): void {

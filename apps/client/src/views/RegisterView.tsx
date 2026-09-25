@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { parseRepository, type RegistrationDraft } from '@zoria/core';
 import type { AppModel, Snapshot } from '../state/model.ts';
 import { Badge, Panel } from '../components/common.tsx';
@@ -144,8 +144,26 @@ export function RegisterView({ s, model }: { s: Snapshot; model: AppModel }) {
 export function LoginView({ s, model }: { s: Snapshot; model: AppModel }) {
   const [username, setUsername] = useState(s.draft.username);
   const [password, setPassword] = useState('');
+  // Escape and a click outside close the window: a modal that cannot be dismissed traps the
+  // participant on the wrong server, where the login can only ever fail.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') model.cancelLogin();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [model]);
+
+  const other = s.server.id === 'prod' ? 'stand' : 'prod';
   return (
-    <div className="modal-backdrop">
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) model.cancelLogin();
+      }}
+    >
       <form
         className="modal"
         onSubmit={(e) => {
@@ -155,6 +173,13 @@ export function LoginView({ s, model }: { s: Snapshot; model: AppModel }) {
       >
         <h2>Вход</h2>
         <p className="muted">Сессия закончилась или не найдена. После входа вернём на тот же экран — введённое не потеряется.</p>
+        <p className="small">
+          Вход на <strong>{s.server.id === 'prod' ? 'боевой сервер' : 'учебный стенд'}</strong> — <code>{s.server.apiBase}</code>. Аккаунты этих
+          серверов разные.{' '}
+          <button type="button" className="link" onClick={() => { model.switchServer(other); }}>
+            Переключиться на {other === 'prod' ? 'боевой' : 'стенд'}
+          </button>
+        </p>
         <label className="field">
           <span className="field-label">Логин</span>
           <input value={username} onChange={(e) => { setUsername(e.target.value); }} autoComplete="username" autoFocus />
@@ -167,6 +192,9 @@ export function LoginView({ s, model }: { s: Snapshot; model: AppModel }) {
         <div className="actions">
           <button type="submit" className="primary" disabled={s.busy.login === true}>
             {s.busy.login ? 'Вход…' : 'Войти'}
+          </button>
+          <button type="button" className="ghost" onClick={() => { model.cancelLogin(); }}>
+            Отмена
           </button>
         </div>
       </form>
