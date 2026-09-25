@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseEnvFile, resolveSecrets } from '../src/secrets.ts';
+import { registrationRequest } from '../src/watcher.ts';
 
 const PASSWORD = 'X4ie9a-NHVJXG-M7CLNf';
 let dir: string;
@@ -60,5 +61,28 @@ describe('watcher secrets', () => {
     write(`ZORIA_PASSWORD="  spaced password  "\nZORIA_INVITATION=C\n`);
     const r = resolveSecrets(file, {});
     expect(r.ok && r.secrets.password).toBe('  spaced password  ');
+  });
+});
+
+describe('registration request', () => {
+  it('carries exactly the contract fields — no inline secrets container', () => {
+    const profile = {
+      username: 'starosdev',
+      displayName: 'Starosdev',
+      repositoryUrl: 'starosdeveloper/zoria',
+      lang: 'uk' as const,
+      inline: { password: 'inline-pass', invitation: 'INLINE' },
+    };
+    const body = registrationRequest(profile, { password: PASSWORD, invitation: 'CODE' });
+    expect(Object.keys(body).sort()).toEqual(['displayName', 'invitation', 'lang', 'password', 'repositoryUrl', 'username']);
+    expect(body).toEqual({
+      username: 'starosdev',
+      displayName: 'Starosdev',
+      repositoryUrl: 'starosdeveloper/zoria',
+      lang: 'uk',
+      password: PASSWORD,
+      invitation: 'CODE',
+    });
+    expect(JSON.stringify(body)).not.toContain('inline');
   });
 });

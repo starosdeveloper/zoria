@@ -19,12 +19,13 @@ import {
   voiceLine,
   type EtherObservation,
   type Failure,
+  type RegisterRequest,
   type Repository,
   type Session,
   type Summary,
   type TickOutcome,
 } from '@zoria/core';
-import type { WatcherConfig } from './config.ts';
+import type { AccountProfile, WatcherConfig } from './config.ts';
 import { FileStore, readIfExists, writePrivateAtomic } from './files.ts';
 import type { Journal, Notifier } from './log.ts';
 import { resolveSecrets, type Secrets } from './secrets.ts';
@@ -203,7 +204,7 @@ export class Watcher {
       this.registrationStopped = false;
       this.journal.write('alert', 'secrets-changed-retry');
     }
-    const account = { ...profile, ...resolved.secrets };
+    const account = registrationRequest(profile, resolved.secrets);
     this.journal.write('alert', 'registration-start', { trigger, username: account.username, repository: account.repositoryUrl });
     this.registering = (async () => {
       try {
@@ -461,6 +462,22 @@ function failureData(f: Failure): Record<string, unknown> {
     case 'silenced':
       return { kind, until: new Date(f.until).toISOString() };
   }
+}
+
+/**
+ * Exactly the fields of the contract and nothing else: `additionalProperties: false`, while
+ * the profile also carries `inline` secrets that must never reach the wire. Spreading the
+ * profile into the body once cost a registration attempt with 400 invalid-fields.
+ */
+export function registrationRequest(profile: AccountProfile, secrets: Secrets): RegisterRequest {
+  return {
+    username: profile.username,
+    displayName: profile.displayName,
+    repositoryUrl: profile.repositoryUrl,
+    lang: profile.lang,
+    password: secrets.password,
+    invitation: secrets.invitation,
+  };
 }
 
 /** Identifies a set of secrets without keeping them around in a second place. */
