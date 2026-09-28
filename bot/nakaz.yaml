@@ -1,0 +1,36 @@
+# хвилини ("minutes"): the network always pays, the eyes check the way
+#
+# A mixed income profile. Keeps the thread, holds four Tkachs, grows to 24 lit
+# needles, feeds the best of them and checks contacts every 80 ticks. The
+# growth ceiling is an explicit price for steady income and sight.
+# The charter editor has five lanes, so duties that do not live at the same
+# time share one: the swarm is gathered in the first half of the match, and
+# from tick 600 the same lane takes a posted contract - a bonus of 30 minutes is
+# worth a Tkach when there is nobody left to build. Chasing every contract is
+# the job of the "замовлення" charter.
+# At dawn (tick ticks - dawnTicks, the 1000th in a 1200-tick match) the Keeper
+# leaves, and the ring at the citadel becomes unowned with double pull: feeding
+# ends at tick 1000, and the same free Tkach goes into the ring by the dawn rule.
+nakaz: 1
+name: "хвилини"
+rules:
+  - do: hold_net
+  - when:
+      all:
+        - "my_drones < 4"
+        - "tick < 600"
+    do: { build_drone: { cls: tkach, upto: 4 } }
+  - when:
+      all:
+        - "contract_open(any)"
+        - "tick > 600"
+    do: { take_contract: { prefer: nearest } }
+  - when: "my_relays_online < 24"
+    do: { extend_to: { target: nearest_cluster } }
+  - when: "tick < 1000"
+    do: { feed_network: { target: richest_online } }
+  - when: dawn
+    do: { extend_to: { target: ring } }
+  - when: "every 80"
+    do: { scan_at: { target: densest_contacts, every: 80 } }
+    priority: drop-on-budget

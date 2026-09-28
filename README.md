@@ -94,6 +94,25 @@ pnpm verify-draw --secret <64 hex> --logins logins.txt --me <логин>
 
 Раунд drand берётся с двух и более зеркал. Скрипт проверяет правило маяка, обязательство, соль и перестановку и показывает ваше место. Код выхода 0 — всё сошлось.
 
+## Бот части 2 (`bot/`)
+
+Отдельный npm-пакет, вне pnpm-воркспейса: части 2 нужен `npm ci` в новом checkout (P2-01), и общий лок-файл этому мешает. Пакеты `@zoria/*` берутся из частного реестра конкурса, секрет — только в переменной среды:
+
+```bash
+curl -fsS -H "Authorization: Bearer $ZORIA_HUB_TOKEN" https://zoria.net/api/v1/me/registry-token > ~/.zoria-registry.json
+export ZORIA_NPM_AUTH=$(node -p "require(process.env.HOME + '/.zoria-registry.json').auth")
+
+cd bot
+npm ci                         # или npm install в первый раз
+npm run play -- --fast         # три партии локального пакета, полный газ
+npm run play                   # темп 500 мс на такт, как в зачёте
+npm run lint:nakaz             # три ступени линтера приказа
+npx zaria-kit version          # хеш движителя и версии пакетов
+npx zaria-kit docs             # где лежат шесть документов части 2 (сняты в docs/part2/)
+```
+
+`ZORIA_HUB_TOKEN` — токен входа, живёт сутки. `bot/.npmrc` содержит только ссылку `${ZORIA_NPM_AUTH}`, сам секрет лежит в `~/.zoria-registry.json` вне репозитория (P2-07). Записи партий — `bot/records/`, не коммитятся.
+
 ## Проверки
 
 ```bash
@@ -111,7 +130,8 @@ packages/core     ядро без React: HTTP-слой, эфир и печать
 apps/client       React-клиент (Vite)
 apps/watcher      Node-наблюдатель эфира
 scripts/          мок стенда, самопроверка на стенде, проверка жеребьёвки, systemd-юнит, регистрация через curl
-docs/             пакет конкурса
+bot/              бот части 2: свой npm-пакет, вне воркспейса; стратегия в src/strategy.ts, приказ в nakaz.yaml
+docs/             пакет конкурса; docs/part2/ — шесть документов части 2 (укр.)
 ```
 
 ## Секреты

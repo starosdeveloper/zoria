@@ -10,3 +10,6 @@ coverage/
 secrets/
 *.session
 watcher.json
+# ответ hub с секретом реестра (P2-07): в репозиторий не попадает даже случайно
+.zoria-registry.json
+bot/records/
