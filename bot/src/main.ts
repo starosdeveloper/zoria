@@ -11,7 +11,7 @@
                    встановленого @zoria/engine. Чужий хеш - бот рве
                    провід сам: грати не в той світ гірше, ніж не грати
      ZARIA_BELIEF  файл щоденника віри (NDJSON); порожньо - не писати
-     ZARIA_PRESET  архетип заглушки (рівний)
+     ZARIA_PRESET  голова слота: жатва (типово) або архетип дзеркала для спарингу
      ZARIA_FREEZE  1 - здачу заморожено: зміна пресета відповідає відмовою
      ZARIA_AGENT   ім'я агента в присязі (zaria-bot)
      STATUS_PORT   внутрішній службовий порт (status.ts); порожньо - без нього
@@ -30,7 +30,7 @@ import { beliefLine, connectBot } from '@zoria/sdk';
 import type { BotRun, WireBot } from '@zoria/sdk';
 import { decodeObserve } from '@zoria/protocol';
 import { withJitter } from './jitter.js';
-import { createStrategy, presets } from './strategy.js';
+import { createStrategy, HARVEST, presets } from './strategy.js';
 import { Refusal, statusServer } from './status.js';
 import type { Head, HeadStats } from './status.js';
 
@@ -47,7 +47,9 @@ const beliefFile = env['ZARIA_BELIEF'] ?? '';
 const statusPort = Number(env['STATUS_PORT'] ?? '') || 0;
 const freeze = env['ZARIA_FREEZE'] === '1';
 
-let preset = env['ZARIA_PRESET'] || 'рівний';
+/* наш пресет по умолчанию: имя архетипа здесь означало бы, что в зачёт уедет
+   заглушка шаблона, а лог при этом выглядел бы как обычная партия */
+let preset = env['ZARIA_PRESET'] || HARVEST;
 let strategy = createStrategy(preset);
 
 /* знімок голови: усе, що про бій знає лише провід. Його читає службовий

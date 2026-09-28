@@ -1,30 +1,47 @@
 /* bot :: strategy
-   ТУТ ВАША СТРАТЕГІЯ - єдиний файл шаблону, який мусить стати вашим.
+   Which head plays the slot. `жатва` is ours (harvest.ts); the five archetype
+   mirrors stay selectable so that a change can be measured against the same
+   opponents the local pack fields (ZARIA_PRESET, `npm run spar`).
 
-   Заглушка - дзеркальна голова архетипу SDK: вона грає, але своїх правил у
-   неї немає; списуйте з неї контракт, а не тактику. Контракт - WireBot
-   (маніфест, кадр спостереження -> кадр команд, вердикти) плюс кадр
-   щоденника віри. Архетип заглушки - ZARIA_PRESET (рівний, шир, обхідник,
-   проривник, облягач).
-
-   Свою голову починають із BlankBot з @zoria/sdk:
-
-     class MyBot extends BlankBot {
-       protected override think(obs: Observe): Order[] { ... }
-     }
-
-   і повертають її з createStrategy(); belief() без дзеркала збирає
-   BeliefFrame сам або віддає null. Мережі тут немає і бути не повинно:
-   провід, повернення і піни живуть у main.ts і connectBot. */
+   The contract is WireBot - manifest, observation -> orders, verdicts - plus the
+   belief frame of the tick. No network here: the wire, the resume and the pins
+   live in main.ts and connectBot. */
 
 import { createEngine } from '@zoria/engine';
 import { ARCHETYPES, BeliefTrace, sampleBot } from '@zoria/sdk';
 import type { BeliefFrame, MirrorBot, WireBot } from '@zoria/sdk';
 import type { Observe, SlotName } from '@zoria/protocol';
+import { BeliefBook } from './belief.js';
+import { HarvestBot } from './harvest.js';
+
+export const HARVEST = 'жатва';
 
 export interface Strategy extends WireBot {
   /* кадр щоденника віри такту; null - кадру немає */
   belief(obs: Observe | null): BeliefFrame | null;
+}
+
+class HarvestStrategy implements Strategy {
+  private readonly head = new HarvestBot();
+  private book: BeliefBook | null = null;
+
+  init(manifest: Uint8Array, slot: SlotName): void {
+    this.head.init(manifest, slot);
+    this.book = new BeliefBook(slot);
+  }
+
+  tick(observe: Uint8Array): Uint8Array {
+    return this.head.tick(observe);
+  }
+
+  feedback(verdicts: Uint8Array): void {
+    this.head.feedback(verdicts);
+  }
+
+  /* no mirror world here: the journal is assembled from the observation */
+  belief(obs: Observe | null): BeliefFrame | null {
+    return this.book && obs ? this.book.frame(obs) : null;
+  }
 }
 
 class MirrorStrategy implements Strategy {
@@ -55,12 +72,12 @@ class MirrorStrategy implements Strategy {
   }
 }
 
-/* імена архетипів заглушки: за ними службова ручка зміни пресета вирішує,
-   є такий пресет чи ні. Своя голова повертає тут свої імена */
+/* имена пресетов: по ним служебная ручка смены пресета решает, есть такой или
+   нет. Наш — первый, зеркала архетипов оставлены для спарринга */
 export function presets(): string[] {
-  return Object.keys(ARCHETYPES);
+  return [HARVEST, ...Object.keys(ARCHETYPES)];
 }
 
-export function createStrategy(preset = process.env['ZARIA_PRESET'] || 'рівний'): Strategy {
-  return new MirrorStrategy(preset);
+export function createStrategy(preset = process.env['ZARIA_PRESET'] || HARVEST): Strategy {
+  return preset === HARVEST ? new HarvestStrategy() : new MirrorStrategy(preset);
 }
