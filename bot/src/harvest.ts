@@ -74,8 +74,6 @@ export interface HarvestDials {
   readonly klinoks: number;
   /** A Klinok is only worth its channel once the tick budget reaches this. */
   readonly jamChan: number;
-  /** Extra weight for a site that gives a second link: the crown wants cycles (8.6). */
-  readonly crown: number;
 }
 
 export const DIALS: HarvestDials = {
@@ -91,7 +89,6 @@ export const DIALS: HarvestDials = {
   forget: 30,
   klinoks: 0,
   jamChan: 220,
-  crown: 0,
 };
 
 export class HarvestBot extends BlankBot {
@@ -632,11 +629,13 @@ export class HarvestBot extends BlankBot {
           if (!this.threaded(c, o)) continue;
           const back = this.relight(c, cut, o);
           if (onlyRelight && back === 0) continue;
-          /* A second link is worth paying for twice over: the chain survives the
-             loss of one needle, and six such links in a ring are the crown, which
-             pays 1.15 on the whole two-connected chunk (8.6). */
-          const ties = this.dials.crown && this.anchors.length >= (v.cfg['crownCycle'] ?? 6) ? Math.min(this.links(c, o) - 1, 3) : 0;
-          const score = this.growth(c, v) + back * 40 + this.bridge(c, v, o) * 30 + ties * this.dials.crown;
+          /* No bonus for redundant links here. The crown (8.6) looks like something
+             to build for, but `bot/crown.js` measured the finished network: circuit
+             rank 15-47, girth 3, and a simple cycle of six lit needles present on
+             every seed. The multiplier is already earned by a network grown for
+             coverage, so paying weight for extra links buys nothing - and on one
+             seed it shrank the net to 8 lit needles. */
+          const score = this.growth(c, v) + back * 40 + this.bridge(c, v, o) * 30;
           if (score <= bestScore) continue;
           const walk = v.travel(o, from, c, 'ткач');
           if (walk === null) continue;
@@ -743,21 +742,28 @@ export class HarvestBot extends BlankBot {
        less than the walk to it costs in energy that dawn could not spend. */
     if (obs.t > v.ticks - 200) return null;
 
-    /* A Klinok is bought only when the channel can carry it: 64 bytes to start a
-       jam, 8 a tick to hold it and 32 for its hands (11.1, 13.6), out of the same
-       scale the Tkachi take their hands from. Under a thin channel it would just
-       starve them. */
-    const wantKlinok = klinoks + this.pending['клинок'] < this.dials.klinoks && obs.pulse.chanAt >= this.dials.jamChan;
-    const cls = wantKlinok ? 'клинок' : 'ткач';
-    const price = wantKlinok ? (v.cfg['costKlinok'] ?? 50) : (v.cfg['costTkach'] ?? 90);
-    const w = wantKlinok ? wKlinok : wTkach;
-    if (weight + w > cap) return null;
-    if (!wantKlinok && tkachi + this.pending['ткач'] >= this.dials.tkachi) return null;
-    if (obs.pulse.energy - this.reserve < price) return null;
-    this.pending[cls]++;
-    this.yardAt = obs.t;
-    this.stat.yard++;
-    return { kind: 'yard', cls };
+    /* Two wishes in order of preference, and the first one that fits the swarm and
+       the energy wins. A Klinok is wanted only when the channel can carry it: 64
+       bytes to start a jam, 8 a tick to hold it and 32 for its hands (11.1, 13.6),
+       out of the same scale the Tkachi take their hands from. The fallback matters:
+       a wish that does not fit must not block the other one, or the yard stops
+       buying the moment the ceiling is one weight away. */
+    const wish: { cls: ClsName; price: number; w: number }[] = [];
+    if (klinoks + this.pending['клинок'] < this.dials.klinoks && obs.pulse.chanAt >= this.dials.jamChan) {
+      wish.push({ cls: 'клинок', price: v.cfg['costKlinok'] ?? 50, w: wKlinok });
+    }
+    if (tkachi + this.pending['ткач'] < this.dials.tkachi) {
+      wish.push({ cls: 'ткач', price: v.cfg['costTkach'] ?? 90, w: wTkach });
+    }
+    for (const want of wish) {
+      if (weight + want.w > cap) continue;
+      if (obs.pulse.energy - this.reserve < want.price) continue;
+      this.pending[want.cls]++;
+      this.yardAt = obs.t;
+      this.stat.yard++;
+      return { kind: 'yard', cls: want.cls };
+    }
+    return null;
   }
 
   /** A lot is two ruins with no walk and no heating, at second price (17.5). */

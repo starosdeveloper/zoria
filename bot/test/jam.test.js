@@ -83,6 +83,37 @@ test('стартовую голку соперника не глушат: она
   );
 });
 
+test('верфь: желание, которое не влезает в рой, не блокирует другое', () => {
+  /* рой полон четырьмя Ткачами (вес 8 из 8) — заказывать нечего */
+  const full = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  full.init(manifestBytes, 'A');
+  const four = ['T-A1', 'T-A2', 'T-A3', 'T-A4'].map((id) => unit(id));
+  assert.equal(
+    full.think(observe({ t: 50, pulse: { chanAt: 400, energy: 300 }, mine: { units: four } })).some((o) => o.kind === 'yard'),
+    false,
+    'заказ при полном рое',
+  );
+
+  /* три Ткача: Клинок весит 1 и влезает — он и предпочтителен */
+  const room = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  room.init(manifestBytes, 'A');
+  const three = ['T-A1', 'T-A2', 'T-A3'].map((id) => unit(id));
+  const out = room.think(observe({ t: 50, pulse: { chanAt: 400, energy: 300 }, mine: { units: three } }));
+  assert.deepEqual(
+    out.filter((o) => o.kind === 'yard'),
+    [{ kind: 'yard', cls: 'клинок' }],
+  );
+
+  /* канал не дорос до jamChan: Клинок не нужен, но Ткач — да */
+  const thin = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 10000 });
+  thin.init(manifestBytes, 'A');
+  const two = ['T-A1', 'T-A2'].map((id) => unit(id));
+  assert.deepEqual(
+    thin.think(observe({ t: 50, pulse: { chanAt: 400, energy: 300 }, mine: { units: two } })).filter((o) => o.kind === 'yard'),
+    [{ kind: 'yard', cls: 'ткач' }],
+  );
+});
+
 test('без ручки klinoks верфь Клинка не заказывает', () => {
   const plain = new HarvestBot();
   plain.init(manifestBytes, 'A');
