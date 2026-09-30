@@ -124,6 +124,8 @@ export class HarvestBot extends BlankBot {
   private yardAt = -999;
   private reserve = 0;
   private lastOk = 0;
+  /** Tick before the first one this head saw; -1 until it has seen any. */
+  private joined = -1;
   private focus: Hex | null = null;
   private focusAt = -999;
   private anchors: Hex[] = [];
@@ -207,9 +209,13 @@ export class HarvestBot extends BlankBot {
     /* The silence run is measured from the last accepted command, which is what
        the node counts too: an empty frame and a frame of refusals are the same
        thing to it (23.2). The verdict of this tick lands in feedback(), after
-       this frame, so the run is read one tick late and never short. */
+       this frame, so the run is read one tick late and never short. It is counted
+       from the tick this head joined, not from zero: a head that came back after
+       a break (04-protocol.md, 8) starts at tick 600 with nothing accepted yet,
+       and 600 ticks of silence would be a lie about the slot. */
     if (out.length) this.stat.sent++;
-    this.stat.silent = Math.max(this.stat.silent, obs.t - this.lastOk);
+    if (this.joined < 0) this.joined = obs.t - 1;
+    this.stat.silent = Math.max(this.stat.silent, obs.t - Math.max(this.lastOk, this.joined));
 
     this.lastCmd = out.map((c) =>
       c.kind === 'needle'
@@ -539,11 +545,13 @@ export class HarvestBot extends BlankBot {
     return best;
   }
 
+  /** The whole price table of rule 9.2: a silent needle is taken for 16, not 24. */
   private heatTicks(k: string, v: Valley, t: number): number {
     const own = this.owner.get(k);
-    if (own === null) return v.cfg['heatNeedle'] ?? 8;
-    if (own === 'K') return t >= v.dawnAt ? (v.cfg['heatNeedle'] ?? 8) : (v.cfg['heatEnemy'] ?? 24);
-    return v.cfg['heatEnemy'] ?? 24;
+    const free = v.cfg['heatNeedle'] ?? 8;
+    if (own === null) return free;
+    if (own === 'K' && t >= v.dawnAt) return free;
+    return this.dark.get(k) === true ? (v.cfg['heatDark'] ?? 16) : (v.cfg['heatEnemy'] ?? 24);
   }
 
   /** Nearest free needle the thread can hold: ruins always, the ring after dawn. */
