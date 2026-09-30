@@ -65,6 +65,8 @@ export interface HarvestDials {
   readonly stage: number;
   /** Do not walk farther than this for a ruin. */
   readonly reach: number;
+  /** Ticks a cell stays set aside after the node refused to walk there. */
+  readonly forget: number;
 }
 
 export const DIALS: HarvestDials = {
@@ -77,6 +79,7 @@ export const DIALS: HarvestDials = {
   buildGate: 16,
   stage: 60,
   reach: 12,
+  forget: 30,
 };
 
 export class HarvestBot extends BlankBot {
@@ -93,13 +96,15 @@ export class HarvestBot extends BlankBot {
   private readonly plans = new Map<string, Plan>();
   private readonly bidden = new Set<number>();
   private readonly badSite = new Set<string>();
+  /** Cells a move was refused for, with the tick of the refusal. */
+  private readonly badGoal = new Map<string, number>();
 
   /** Plans started and money spent, for the sparring script: where the four Tkachi went. */
   readonly stat = { take: 0, build: 0, feed: 0, stage: 0, yard: 0, bid: 0, quiet: 0 };
 
   private t = 0;
   /** What each command of the last frame was about, so a verdict can be acted on. */
-  private lastCmd: ({ unit?: string; site?: string; yard?: boolean } | null)[] = [];
+  private lastCmd: ({ unit?: string; site?: string; goal?: string; yard?: boolean } | null)[] = [];
   private pending = 0;
   private yardAt = -999;
   private reserve = 0;
@@ -184,11 +189,13 @@ export class HarvestBot extends BlankBot {
     this.lastCmd = out.map((c) =>
       c.kind === 'needle'
         ? { unit: c.unit, site: key(c.q, c.r) }
-        : c.kind === 'move' || c.kind === 'feed'
-          ? { unit: c.unit }
-          : c.kind === 'yard'
-            ? { yard: true }
-            : null,
+        : c.kind === 'move'
+          ? { unit: c.unit, goal: key(c.q, c.r) }
+          : c.kind === 'feed'
+            ? { unit: c.unit }
+            : c.kind === 'yard'
+              ? { yard: true }
+              : null,
     );
     return out;
   }
@@ -215,6 +222,11 @@ export class HarvestBot extends BlankBot {
       if (sent.yard) this.pending = Math.max(0, this.pending - 1);
       if (code === DENY_LAND || code === DENY_OTHER || code === DENY_PATH) {
         if (sent.site) this.badSite.add(sent.site);
+        /* `земля` also means "occupied" (04-protocol.md, 6.6): the cell may be
+           free again in a few ticks, so the target is set aside rather than
+           struck off - but set aside long enough that the head does not spend a
+           command on it every tick until the match ends. */
+        if (sent.goal) this.badGoal.set(sent.goal, this.t);
         if (sent.unit) this.plans.delete(sent.unit);
       }
     }
@@ -365,6 +377,13 @@ export class HarvestBot extends BlankBot {
     return new Set([...this.plans.values()].map((p) => p.key));
   }
 
+  /** Someone else's plan, or a cell the node refused to walk to lately. */
+  private off(k: string, busy: Set<string>): boolean {
+    if (busy.has(k)) return true;
+    const at = this.badGoal.get(k);
+    return at !== undefined && this.t - at < this.dials.forget;
+  }
+
   private pickPlan(u: MineUnit, obs: Observe, v: Valley, o: RulesOracle): Plan | null {
     if (u.cls !== 'ткач') return null;
     const busy = this.taken();
@@ -406,7 +425,7 @@ export class HarvestBot extends BlankBot {
     let bestCost = Infinity;
     for (const c of board.cells) {
       const k = key(c.q, c.r);
-      if (busy.has(k) || this.owner.get(k) === this.slot) continue;
+      if (this.off(k, busy) || this.owner.get(k) === this.slot) continue;
       if (!this.heatable(k, c.q, c.r, v, obs.t)) continue;
       if (!this.threaded(c, o)) continue;
       const walk = v.travel(o, from, c, 'ткач');
@@ -433,7 +452,7 @@ export class HarvestBot extends BlankBot {
     const pool = obs.t >= v.dawnAt ? [...v.ruins, ...v.ringKeys] : v.ruins;
     const near: { k: string; at: Hex; d: number }[] = [];
     for (const k of pool) {
-      if (busy.has(k)) continue;
+      if (this.off(k, busy)) continue;
       const own = this.owner.get(k);
       if (own !== null && !(own === 'K' && obs.t >= v.dawnAt)) continue;
       const at = v.cellOf(k);
@@ -474,7 +493,7 @@ export class HarvestBot extends BlankBot {
       if (!this.threaded(at, o)) continue;
       for (const n of ring(at, 1)) {
         const nk = key(n.q, n.r);
-        if (busy.has(nk) || v.needles.has(nk) || !v.inValley(n.q, n.r) || !v.at(nk).pass) continue;
+        if (this.off(nk, busy) || v.needles.has(nk) || !v.inValley(n.q, n.r) || !v.at(nk).pass) continue;
         const walk = v.travel(o, from, n, 'ткач');
         if (walk === null || walk >= bestWalk) continue;
         bestWalk = walk;
@@ -507,7 +526,7 @@ export class HarvestBot extends BlankBot {
       for (const rad of [3, 4, 5]) {
         for (const c of ring(a, rad)) {
           const k = key(c.q, c.r);
-          if (busy.has(k) || this.badSite.has(k) || !this.buildable(k, c, v)) continue;
+          if (this.off(k, busy) || this.badSite.has(k) || !this.buildable(k, c, v)) continue;
           if (!this.threaded(c, o)) continue;
           const back = this.relight(c, cut, o);
           if (onlyRelight && back === 0) continue;
@@ -562,7 +581,7 @@ export class HarvestBot extends BlankBot {
       for (const cell of ring(c, rad)) {
         if (!v.inValley(cell.q, cell.r)) continue;
         if (this.anchors.some((a) => hexDist(a, cell) <= 2)) continue;
-        sum += v.cost(cell.q, cell.r);
+        sum += v.price(cell.q, cell.r);
       }
     }
     return sum;
@@ -586,14 +605,14 @@ export class HarvestBot extends BlankBot {
     let bestScore = 0;
     for (const n of obs.mine.needles) {
       const k = key(n.q, n.r);
-      if (busy.has(k) || n.dark || n.weight < 1 || n.fed) continue;
+      if (this.off(k, busy) || n.dark || n.weight < 1 || n.fed) continue;
       const at = { q: n.q, r: n.r };
       let free = 0;
       for (const rad of [2, 3, 4]) {
         for (const cell of ring(at, rad)) {
           if (!v.inValley(cell.q, cell.r)) continue;
           if (this.anchors.some((a) => !same(a, at) && hexDist(a, cell) <= 3)) continue;
-          free += v.cost(cell.q, cell.r);
+          free += v.price(cell.q, cell.r);
         }
       }
       const score = free / (1 + hexDist(from, at));

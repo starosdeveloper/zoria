@@ -12,7 +12,8 @@
     "start": "node dist/main.js",
     "play": "npm run build && zaria-kit pack",
     "lint:nakaz": "zaria-kit lint nakaz.yaml",
-    "check": "npm run build && zaria-kit lint nakaz.yaml",
+    "test": "npm run build && node --test test/",
+    "check": "npm run build && node --test test/ && zaria-kit lint nakaz.yaml",
     "spar": "npm run build && node spar.js"
   },
   "zaria": {

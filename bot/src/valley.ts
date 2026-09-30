@@ -53,10 +53,15 @@ export function ring(centre: Hex, rad: number): Hex[] {
   return out;
 }
 
+/* The manifest names the two numbers of a land type apart (appendix A.2):
+   `cost` is the step multiplier of rule 10.5, `min` is the cell price of rule
+   8.3. They differ - a meadow steps like plain but pays half again as much -
+   so they are kept apart here too. */
 export interface Land {
   readonly pass: boolean;
   readonly build: boolean;
-  readonly cost: number;
+  readonly step: number;
+  readonly price: number;
 }
 
 /** Everything the manifest fixes for the whole match. */
@@ -89,12 +94,12 @@ export class Valley {
     const types = m.terrain.types;
     const plain = types[0];
     if (!plain) throw new Error('manifest without terrain types');
-    this.plain = { pass: plain.pass, build: plain.build, cost: plain.cost };
+    this.plain = { pass: plain.pass, build: plain.build, step: plain.cost, price: plain.min };
     this.land = new Map();
     for (const [q, r, t] of m.terrain.cells) {
       const type = types[t];
       if (!type) continue;
-      this.land.set(key(q, r), { pass: type.pass, build: type.build, cost: type.cost });
+      this.land.set(key(q, r), { pass: type.pass, build: type.build, step: type.cost, price: type.min });
     }
 
     this.needles = new Map();
@@ -130,8 +135,8 @@ export class Valley {
   }
 
   /** Income weight of a cell: its land price (rule 8.3, appendix A.2). */
-  cost(q: number, r: number): number {
-    return this.inValley(q, r) ? this.at(key(q, r)).cost : 0;
+  price(q: number, r: number): number {
+    return this.inValley(q, r) ? this.at(key(q, r)).price : 0;
   }
 
   /** Our hearth. The slot letter names the vertex (rule 5.4), verified in harvest.ts. */
