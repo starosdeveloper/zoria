@@ -26,23 +26,9 @@ export class BeliefBook {
     return this.own.get(k);
   }
 
-  isDark(k: string): boolean {
-    return this.dark.get(k) === true;
-  }
-
-  /** Believed owner of every needle cell ever seen; the caller filters. */
-  entries(): IterableIterator<[string, ActorName | null]> {
-    return this.own.entries();
-  }
-
-  see(k: string, owner: ActorName | null, dark: boolean): void {
+  private see(k: string, owner: ActorName | null, dark: boolean): void {
     this.own.set(k, owner);
     this.dark.set(k, dark);
-  }
-
-  forget(k: string): void {
-    this.own.delete(k);
-    this.dark.delete(k);
   }
 
   /** Reads the tick into memory and returns the journal frame for it. */

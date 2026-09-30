@@ -153,14 +153,16 @@ export class Valley {
     return this.m.lots;
   }
 
-  /** Travel time in ticks along the node's own path, or null when there is no way. */
+  /** Travel time in ticks along the node's own path, or null when there is no way.
+      The node's path does not include the cell the machine starts on - pinned by a
+      test, because `stepCost` of a cell to itself is not zero (it is the cost of one
+      step on that land), so a path that repeated the start would overcount. */
   travel(o: RulesOracle, from: Hex, to: Hex, cls: ClsName): number | null {
     const path = o.path(from, to, cls);
     if (path === null) return null;
     let ticks = 0;
     let prev = from;
     for (const step of path) {
-      if (same(step, prev)) continue;
       ticks += o.stepCost(prev, step, cls);
       prev = step;
     }

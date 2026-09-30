@@ -13,6 +13,7 @@
     "play": "npm run build && zaria-kit pack",
     "lint:nakaz": "zaria-kit lint nakaz.yaml",
     "test": "npm run build && node --test test/",
+    "mutate": "npm run build && stryker run",
     "check": "npm run build && node --test test/ && zaria-kit lint nakaz.yaml",
     "spar": "npm run build && node spar.js",
     "tourney": "npm run build && node tourney.js"
@@ -28,8 +29,9 @@
     "@zoria/sdk": "^1.0.0"
   },
   "devDependencies": {
-    "@zoria/kit": "^1.0.0",
+    "@stryker-mutator/core": "^10.0.0",
     "@types/node": "24.3.0",
+    "@zoria/kit": "^1.0.0",
     "typescript": "7.0.2"
   }
 }

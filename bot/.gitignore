@@ -1,3 +1,6 @@
 node_modules/
 dist/
 records/
+# StrykerJS: песочница прогона и отчёты мутационного тестирования
+.stryker-tmp/
+reports/
