@@ -6,7 +6,9 @@ import globals from 'globals';
 // Rules picked to match the defect classes the season's analyzer reports (scoring 8.7):
 // floating promises, swallowed errors, import cycles.
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'coverage/**'] },
+  /* .stryker-tmp — песочница мутационного прогона: копия дерева с внесённым
+     мутантом, которую линтеру разбирать незачем (ROADMAP 6.4) */
+  { ignores: ['**/dist/**', '**/node_modules/**', 'coverage/**', '**/.stryker-tmp/**', 'bot/reports/**'] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
