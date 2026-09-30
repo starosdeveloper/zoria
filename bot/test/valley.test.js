@@ -137,8 +137,7 @@ test('числа мира читаются по именам, и пропуск 
   /* сдвиг мира переименовал или убрал ключ: играть по прошлогоднему числу
      хуже, чем не играть — поэтому отказ с именем ключа */
   for (const k of NEEDED) {
-    const holed = { ...manifest.cfg };
-    delete holed[k];
+    const holed = Object.fromEntries(Object.entries(manifest.cfg).filter(([name]) => name !== k));
     assert.throws(() => readNumbers(holed), new RegExp(k), 'пропуск ' + k + ' прошёл молча');
   }
   assert.throws(() => readNumbers({ ...manifest.cfg, heatEnemy: Number.NaN }), /heatEnemy/);
