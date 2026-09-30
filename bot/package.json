@@ -14,7 +14,8 @@
     "lint:nakaz": "zaria-kit lint nakaz.yaml",
     "test": "npm run build && node --test test/",
     "check": "npm run build && node --test test/ && zaria-kit lint nakaz.yaml",
-    "spar": "npm run build && node spar.js"
+    "spar": "npm run build && node spar.js",
+    "tourney": "npm run build && node tourney.js"
   },
   "zaria": {
     "bot": "node dist/main.js",

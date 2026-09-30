@@ -1,0 +1,94 @@
+/* Завада Клинком: последовательность «подойти на одну соту — глушить с
+   удержанием» и три случая, когда глушить нельзя (правила 11.1, 11.3, 7.6).
+   Ошибка здесь тихая: команда `jam` по своей, ничьей или стартовой голке
+   принимается, байты списываются, а завады нет. */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { HarvestBot, DIALS } from '../dist/harvest.js';
+import { manifestBytes, observe, unit } from './frames.js';
+
+/* руина в 3 сотах от стартовой голки вершины A — внутри длины нити (5) */
+const FOE = { q: 2, r: -9 };
+const dist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q - b.q + a.r - b.r)) / 2;
+
+const head = () => {
+  const b = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  b.init(manifestBytes, 'A');
+  return b;
+};
+
+const withKlinok = (at, own) =>
+  observe({
+    t: 300,
+    pulse: { chanAt: 400, energy: 300 },
+    mine: { units: [unit('K-A1', { cls: 'клинок', q: at.q, r: at.r })] },
+    own: own,
+  });
+
+test('Клинок идёт к чужой горящей голке, но не на неё', () => {
+  const out = head().think(withKlinok({ q: 6, r: -12 }, [{ ...FOE, owner: 'B', dark: false }]));
+  const move = out.find((o) => o.kind === 'move' && o.unit === 'K-A1');
+  assert.ok(move, 'команды хода нет: ' + JSON.stringify(out));
+  assert.notDeepEqual({ q: move.q, r: move.r }, FOE, 'цель хода — сама голка');
+  assert.equal(dist({ q: move.q, r: move.r }, FOE), 1, 'ход не на соседнюю соту');
+  assert.equal(move.home, true, 'без home повідець развернёт Клинка (10.9)');
+});
+
+test('с соседней соты — jam с удержанием', () => {
+  const out = head().think(withKlinok({ q: 2, r: -8 }, [{ ...FOE, owner: 'B', dark: false }]));
+  const jam = out.find((o) => o.kind === 'jam');
+  assert.ok(jam, 'завады нет: ' + JSON.stringify(out));
+  assert.deepEqual(jam.target, FOE);
+  assert.equal(jam.hold, true);
+  assert.equal(jam.unit, 'K-A1');
+});
+
+test('мовчазну чужую голку не глушат: здобичи с неё нет (8.7)', () => {
+  const out = head().think(withKlinok({ q: 2, r: -8 }, [{ ...FOE, owner: 'B', dark: true }]));
+  assert.equal(
+    out.some((o) => o.kind === 'jam'),
+    false,
+  );
+});
+
+test('ничью руину и свою голку не глушат: правило 11.3', () => {
+  const neutral = head().think(withKlinok({ q: 2, r: -8 }, []));
+  assert.equal(
+    neutral.some((o) => o.kind === 'jam'),
+    false,
+    'глушит ничью руину',
+  );
+  const mine = head().think(withKlinok({ q: 2, r: -8 }, [{ ...FOE, owner: 'A', dark: false }]));
+  assert.equal(
+    mine.some((o) => o.kind === 'jam'),
+    false,
+    'глушит свою голку',
+  );
+});
+
+test('стартовую голку соперника не глушат: она под щитом (7.6)', () => {
+  const start = { q: 7, r: 5 }; // стартовая голка вершины B
+  const out = head().think(
+    observe({
+      t: 300,
+      pulse: { chanAt: 400, energy: 300 },
+      mine: { units: [unit('K-A1', { cls: 'клинок', q: 7, r: 4 })] },
+      own: [{ ...start, owner: 'B', dark: false }],
+    }),
+  );
+  assert.equal(
+    out.some((o) => o.kind === 'jam'),
+    false,
+  );
+});
+
+test('без ручки klinoks верфь Клинка не заказывает', () => {
+  const plain = new HarvestBot();
+  plain.init(manifestBytes, 'A');
+  const out = plain.think(observe({ pulse: { chanAt: 400, energy: 300 } }));
+  assert.deepEqual(
+    out.filter((o) => o.kind === 'yard'),
+    [{ kind: 'yard', cls: 'ткач' }],
+  );
+});

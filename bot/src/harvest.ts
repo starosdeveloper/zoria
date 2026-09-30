@@ -27,7 +27,7 @@ import { BlankBot } from '@zoria/sdk';
 import { RulesOracle } from '@zoria/sdk';
 import { createEngine } from '@zoria/engine';
 import { decodeVerdicts } from '@zoria/protocol';
-import type { ActorName, Hex, MineUnit, Observe, Order, SlotName } from '@zoria/protocol';
+import type { ActorName, ClsName, Hex, MineUnit, Observe, Order, SlotName } from '@zoria/protocol';
 import { dist, hexDist, key, ring, same, Valley } from './valley.js';
 
 /* Refusal codes that mean "this cell will not do", from the protocol table
@@ -36,7 +36,7 @@ const DENY_LAND = 11;
 const DENY_PATH = 12;
 const DENY_OTHER = 21;
 
-type PlanKind = 'take' | 'feed' | 'build' | 'stage';
+type PlanKind = 'take' | 'feed' | 'build' | 'stage' | 'jam';
 
 interface Plan {
   readonly kind: PlanKind;
@@ -51,7 +51,10 @@ export interface HarvestDials {
   readonly tkachi: number;
   /** Commands per tick besides the free keepalive. */
   readonly cmds: number;
-  /** Silence margin: a command is forced when this many ticks passed without an accepted one. */
+  /** Silence margin: a command is forced when this many ticks passed without an accepted one.
+      The verdict of a tick lands after that tick's frame, so the run the head sees is one tick
+      behind the node's; 4 measured a run of 5 in the tournament, one refusal short of losing
+      the slot at 6 (23.2). */
   readonly quiet: number;
   /** Bid for a lot; second price, so this is a ceiling, not a cost (rule 17.5). */
   readonly bid: number;
@@ -67,12 +70,18 @@ export interface HarvestDials {
   readonly reach: number;
   /** Ticks a cell stays set aside after the node refused to walk there. */
   readonly forget: number;
+  /** Klinki to keep for jamming; each is one weight out of the Tkachi's eight. */
+  readonly klinoks: number;
+  /** A Klinok is only worth its channel once the tick budget reaches this. */
+  readonly jamChan: number;
+  /** Extra weight for a site that gives a second link: the crown wants cycles (8.6). */
+  readonly crown: number;
 }
 
 export const DIALS: HarvestDials = {
   tkachi: 4,
   cmds: 2,
-  quiet: 4,
+  quiet: 3,
   bid: 137,
   buildSpare: 0,
   flood: 200,
@@ -80,6 +89,9 @@ export const DIALS: HarvestDials = {
   stage: 60,
   reach: 12,
   forget: 30,
+  klinoks: 0,
+  jamChan: 220,
+  crown: 0,
 };
 
 export class HarvestBot extends BlankBot {
@@ -90,6 +102,8 @@ export class HarvestBot extends BlankBot {
 
   /** Believed owner of every needle cell: manifest priors, then sight and events. */
   private readonly owner = new Map<string, ActorName | null>();
+  /** Whether a needle was silent when last seen: a dark needle gives no loot (8.7). */
+  private readonly dark = new Map<string, boolean>();
   private readonly capAt = new Map<string, number>();
   /** Last tick a jam was seen on one of our needles: a jam is not a cut thread. */
   private readonly jamAt = new Map<string, number>();
@@ -99,13 +113,17 @@ export class HarvestBot extends BlankBot {
   /** Cells a move was refused for, with the tick of the refusal. */
   private readonly badGoal = new Map<string, number>();
 
-  /** Plans started and money spent, for the sparring script: where the four Tkachi went. */
-  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, yard: 0, bid: 0, quiet: 0 };
+  /** Plans started and money spent, for the sparring script: where the four Tkachi went.
+      `silent` is the longest run of silent ticks (23.2): the charter takes the slot at 6, so
+      this number answers P2-04 without a thirty-minute run at match tempo. `sent` and `nacks`
+      count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
+  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, nacks: 0, silent: 0 };
 
   private t = 0;
   /** What each command of the last frame was about, so a verdict can be acted on. */
-  private lastCmd: ({ unit?: string; site?: string; goal?: string; yard?: boolean } | null)[] = [];
-  private pending = 0;
+  private lastCmd: ({ unit?: string; site?: string; goal?: string; yard?: ClsName } | null)[] = [];
+  /** Corpses ordered but not yet out of the yard: the frame does not show them (SDK 2). */
+  private readonly pending: Record<ClsName, number> = { ткач: 0, клинок: 0 };
   private yardAt = -999;
   private reserve = 0;
   private lastOk = 0;
@@ -148,8 +166,11 @@ export class HarvestBot extends BlankBot {
     const tick = this.dials;
 
     /* Hands first: every acting machine costs 32 bytes of the same scale the
-       commands are paid from, so the command budget is what is left over. */
-    const hands = obs.mine.units.filter((u) => this.acting(u, v)).length * (v.cfg['chanTick'] ?? 32);
+       commands are paid from, so the command budget is what is left over. A jam
+       we hold takes its own 8 bytes a tick on top of the hands (11.1). */
+    const hands =
+      obs.mine.units.filter((u) => this.acting(u, v)).length * (v.cfg['chanTick'] ?? 32) +
+      obs.mine.jams.length * (v.cfg['jamKeep'] ?? 8);
     const cost = v.cfg['chanOrder'] ?? 32;
     let room = Math.max(0, Math.floor((chanAt - hands) / cost));
     room = Math.min(room, tick.cmds);
@@ -186,6 +207,13 @@ export class HarvestBot extends BlankBot {
       if (keep) out.push(keep);
     }
 
+    /* The silence run is measured from the last accepted command, which is what
+       the node counts too: an empty frame and a frame of refusals are the same
+       thing to it (23.2). The verdict of this tick lands in feedback(), after
+       this frame, so the run is read one tick late and never short. */
+    if (out.length) this.stat.sent++;
+    this.stat.silent = Math.max(this.stat.silent, obs.t - this.lastOk);
+
     this.lastCmd = out.map((c) =>
       c.kind === 'needle'
         ? { unit: c.unit, site: key(c.q, c.r) }
@@ -194,7 +222,7 @@ export class HarvestBot extends BlankBot {
           : c.kind === 'feed'
             ? { unit: c.unit }
             : c.kind === 'yard'
-              ? { yard: true }
+              ? { yard: c.cls }
               : null,
     );
     return out;
@@ -209,6 +237,7 @@ export class HarvestBot extends BlankBot {
   /** Verdicts of this tick: an accepted command is what keeps the slot (rule 23.2). */
   seen(verdicts: readonly [number, boolean, number][]): void {
     if (verdicts.some(([, ok]) => ok)) this.lastOk = this.t;
+    this.stat.nacks += verdicts.filter(([, ok]) => !ok).length;
     /* Ground that refuses once refuses every tick: a refused site is remembered
        and the plan dropped, or the Tkach would stand there paying hands for a
        needle that will not rise (12.2, 13.6). */
@@ -219,7 +248,7 @@ export class HarvestBot extends BlankBot {
       /* A refused yard never took the energy and never queued a corpse: the
          count has to come back, or the swarm ceiling would look full forever
          and the yard would spam refusals for the rest of the match. */
-      if (sent.yard) this.pending = Math.max(0, this.pending - 1);
+      if (sent.yard) this.pending[sent.yard] = Math.max(0, this.pending[sent.yard] - 1);
       if (code === DENY_LAND || code === DENY_OTHER || code === DENY_PATH) {
         if (sent.site) this.badSite.add(sent.site);
         /* `земля` also means "occupied" (04-protocol.md, 6.6): the cell may be
@@ -252,8 +281,14 @@ export class HarvestBot extends BlankBot {
   }
 
   private sync(obs: Observe, v: Valley): void {
-    for (const e of obs.own) this.owner.set(key(e.q, e.r), e.owner);
-    for (const n of obs.mine.needles) this.owner.set(key(n.q, n.r), this.slot);
+    for (const e of obs.own) {
+      this.owner.set(key(e.q, e.r), e.owner);
+      this.dark.set(key(e.q, e.r), e.dark);
+    }
+    for (const n of obs.mine.needles) {
+      this.owner.set(key(n.q, n.r), this.slot);
+      this.dark.set(key(n.q, n.r), n.dark);
+    }
     for (const l of obs.mine.losts) this.owner.set(key(l.q, l.r), l.owner);
     for (const ev of obs.events) {
       if (ev.type === 'cap') {
@@ -270,12 +305,15 @@ export class HarvestBot extends BlankBot {
           for (const c of lot.cells) this.owner.set(key(c.q, c.r), ev.p);
         }
       } else if (ev.type === 'build' && ev.p === this.slot) {
-        this.pending = Math.max(0, this.pending - 1);
+        this.pending[ev.cls] = Math.max(0, this.pending[ev.cls] - 1);
       }
     }
     /* A corpse in the yard queue is invisible in the frame (SDK 2), so it is
        counted here; a count that never resolves would freeze the yard. */
-    if (this.pending > 0 && obs.t - this.yardAt > 24) this.pending = 0;
+    if (obs.t - this.yardAt > 24) {
+      this.pending['ткач'] = 0;
+      this.pending['клинок'] = 0;
+    }
 
     const live = new Set(obs.mine.units.map((u) => u.id));
     for (const id of [...this.plans.keys()]) if (!live.has(id)) this.plans.delete(id);
@@ -333,7 +371,7 @@ export class HarvestBot extends BlankBot {
 
     const plan = this.plans.get(u.id);
     if (plan) {
-      const done = this.planDone(plan, u, obs, v);
+      const done = this.planDone(plan, obs, v);
       if (done) this.plans.delete(u.id);
       else return this.planStep(plan, u);
     }
@@ -345,11 +383,17 @@ export class HarvestBot extends BlankBot {
     return this.planStep(next, u);
   }
 
-  private planDone(plan: Plan, u: MineUnit, obs: Observe, v: Valley): boolean {
+  private planDone(plan: Plan, obs: Observe, v: Valley): boolean {
     const mine = this.owner.get(plan.key) === this.slot;
     if (plan.kind === 'take') return mine || !this.heatable(plan.key, plan.at.q, plan.at.r, v, obs.t);
     if (plan.kind === 'build') return v.needles.has(plan.key) || this.badSite.has(plan.key);
     if (plan.kind === 'feed') return !mine || obs.mine.needles.some((n) => key(n.q, n.r) === plan.key && n.dark);
+    /* A jam holds while the needle is still someone else's and still burning:
+       a dark or retaken needle yields no loot at all (8.7, 11.4). */
+    if (plan.kind === 'jam') {
+      const own = this.owner.get(plan.key);
+      return own === null || own === this.slot || own === 'K' || this.dark.get(plan.key) === true;
+    }
     /* stage: hold the doorstep until dawn opens the ring */
     return obs.t >= v.dawnAt;
   }
@@ -357,6 +401,18 @@ export class HarvestBot extends BlankBot {
   /** One command that moves the plan forward, or none when the plan is walking. */
   private planStep(plan: Plan, u: MineUnit): Order | null {
     const here = same({ q: u.q, r: u.r }, plan.at);
+    /* A jam is thrown from any cell within one of the needle (11.1), so the
+       Klinok is not walked onto it - and `jam` with hold is the command the
+       world reads, not the step. */
+    if (plan.kind === 'jam') {
+      if (hexDist({ q: u.q, r: u.r }, plan.at) > 1) {
+        if (u.task !== null && u.task.path > 0) return null;
+        const step = this.approach(plan.at, u);
+        return step ? { kind: 'move', unit: u.id, q: step.q, r: step.r, goal: null, home: true } : null;
+      }
+      if (u.task !== null && u.task.jam !== null) return null;
+      return { kind: 'jam', unit: u.id, target: { q: plan.at.q, r: plan.at.r }, hold: true };
+    }
     if (!here) {
       /* Already walking there: the node keeps the path, we keep the channel. */
       if (u.task !== null && u.task.path > 0) return null;
@@ -373,6 +429,24 @@ export class HarvestBot extends BlankBot {
     return { kind: 'needle', unit: u.id, q: plan.at.q, r: plan.at.r };
   }
 
+  /** A free cell next to the target, nearest to the machine. */
+  private approach(at: Hex, u: MineUnit): Hex | null {
+    const v = this.valley;
+    if (!v) return null;
+    let best: Hex | null = null;
+    let bestD = Infinity;
+    for (const n of ring(at, 1)) {
+      const k = key(n.q, n.r);
+      if (!v.inValley(n.q, n.r) || !v.at(k).pass || v.needles.has(k)) continue;
+      const d = hexDist({ q: u.q, r: u.r }, n);
+      if (d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best;
+  }
+
   private taken(): Set<string> {
     return new Set([...this.plans.values()].map((p) => p.key));
   }
@@ -385,9 +459,9 @@ export class HarvestBot extends BlankBot {
   }
 
   private pickPlan(u: MineUnit, obs: Observe, v: Valley, o: RulesOracle): Plan | null {
-    if (u.cls !== 'ткач') return null;
     const busy = this.taken();
     const from: Hex = { q: u.q, r: u.r };
+    if (u.cls !== 'ткач') return this.jamPlan(obs, v, from, busy);
 
     const order = this.orderPlan(obs, v, o, from, busy);
     if (order) return order;
@@ -415,6 +489,34 @@ export class HarvestBot extends BlankBot {
     if (build) return build;
 
     return this.feedPlan(obs, v, from, busy);
+  }
+
+  /** A jam takes the needle's coverage for us and leaves its owner nothing (8.7, 11.4).
+      The target must be close to our own pull: outside our zone of contact the leash
+      turns the Klinok around every 40 ticks and charges a energy for it (10.9). */
+  private jamPlan(obs: Observe, v: Valley, from: Hex, busy: Set<string>): Plan | null {
+    if (obs.t >= v.dawnAt) return null; // the ring is dead and players' needles are far
+    let best: Plan | null = null;
+    let bestD = Infinity;
+    for (const [k, own] of this.owner) {
+      if (own === null || own === this.slot || own === 'K') continue;
+      if (this.dark.get(k) === true) continue; // a silent needle has nothing to take
+      if (this.off(k, busy)) continue;
+      const spec = v.needles.get(k);
+      if (!spec || spec.start !== null) continue; // start needles are under the shield (7.6)
+      const at = v.cellOf(k);
+      /* Near our own needles the Klinok stays inside the zone of contact and the
+         needle it darkens is one the owner's thread most likely reaches - the
+         only case that yields loot at all. */
+      const near = Math.min(...this.anchors.map((a) => hexDist(a, at)));
+      if (near > (v.cfg['linkRange'] ?? 5)) continue;
+      const d = hexDist(from, at);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind: 'jam', at, key: k, since: obs.t };
+      }
+    }
+    return best;
   }
 
   /** The contract pays 30 minutes for three held needles (rule 18) - a needle's whole match. */
@@ -530,7 +632,11 @@ export class HarvestBot extends BlankBot {
           if (!this.threaded(c, o)) continue;
           const back = this.relight(c, cut, o);
           if (onlyRelight && back === 0) continue;
-          const score = this.growth(c, v) + back * 40 + this.bridge(c, v, o) * 30;
+          /* A second link is worth paying for twice over: the chain survives the
+             loss of one needle, and six such links in a ring are the crown, which
+             pays 1.15 on the whole two-connected chunk (8.6). */
+          const ties = this.dials.crown && this.anchors.length >= (v.cfg['crownCycle'] ?? 6) ? Math.min(this.links(c, o) - 1, 3) : 0;
+          const score = this.growth(c, v) + back * 40 + this.bridge(c, v, o) * 30 + ties * this.dials.crown;
           if (score <= bestScore) continue;
           const walk = v.travel(o, from, c, 'ткач');
           if (walk === null) continue;
@@ -628,19 +734,30 @@ export class HarvestBot extends BlankBot {
 
   private yardOrder(obs: Observe, v: Valley): Order | null {
     const wTkach = v.cfg['weightTkach'] ?? 2;
+    const wKlinok = v.cfg['weightKlinok'] ?? 1;
     const cap = v.cfg['squadWeight'] ?? 8;
-    const weight = obs.mine.units.reduce((s, u) => s + (u.cls === 'ткач' ? wTkach : (v.cfg['weightKlinok'] ?? 1)), 0) + this.pending * wTkach;
-    if (weight + wTkach > cap) return null;
-    if (obs.mine.units.length + this.pending >= this.dials.tkachi) return null;
-    const price = v.cfg['costTkach'] ?? 90;
-    if (obs.pulse.energy - this.reserve < price) return null;
-    /* Late Tkachi never pay for themselves: a needle taken at tick 1100 earns
+    const tkachi = obs.mine.units.filter((u) => u.cls === 'ткач').length;
+    const klinoks = obs.mine.units.length - tkachi;
+    const weight = (tkachi + this.pending['ткач']) * wTkach + (klinoks + this.pending['клинок']) * wKlinok;
+    /* Late machines never pay for themselves: a needle taken at tick 1100 earns
        less than the walk to it costs in energy that dawn could not spend. */
     if (obs.t > v.ticks - 200) return null;
-    this.pending++;
+
+    /* A Klinok is bought only when the channel can carry it: 64 bytes to start a
+       jam, 8 a tick to hold it and 32 for its hands (11.1, 13.6), out of the same
+       scale the Tkachi take their hands from. Under a thin channel it would just
+       starve them. */
+    const wantKlinok = klinoks + this.pending['клинок'] < this.dials.klinoks && obs.pulse.chanAt >= this.dials.jamChan;
+    const cls = wantKlinok ? 'клинок' : 'ткач';
+    const price = wantKlinok ? (v.cfg['costKlinok'] ?? 50) : (v.cfg['costTkach'] ?? 90);
+    const w = wantKlinok ? wKlinok : wTkach;
+    if (weight + w > cap) return null;
+    if (!wantKlinok && tkachi + this.pending['ткач'] >= this.dials.tkachi) return null;
+    if (obs.pulse.energy - this.reserve < price) return null;
+    this.pending[cls]++;
     this.yardAt = obs.t;
     this.stat.yard++;
-    return { kind: 'yard', cls: 'ткач' };
+    return { kind: 'yard', cls };
   }
 
   /** A lot is two ruins with no walk and no heating, at second price (17.5). */
