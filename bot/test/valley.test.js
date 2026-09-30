@@ -13,6 +13,7 @@ import { openMatch } from '@zoria/sdk';
 import { decodeManifest } from '@zoria/protocol';
 import { RulesOracle } from '@zoria/sdk';
 import { DIRS, dist, key, ring, same, Valley } from '../dist/valley.js';
+import { NEEDED, readNumbers } from '../dist/numbers.js';
 
 const bytes = openMatch(createEngine, { seed: 2026, ticks: 1200 }).manifest;
 const manifest = decodeManifest(bytes);
@@ -126,6 +127,22 @@ test('межа, зоря и множитель кольца — правила 5
   assert.equal(manifest.dawn.ring, 2);
   assert.equal(valley.inCherta({ q: 0, r: 6 }), true);
   assert.equal(valley.inCherta({ q: 0, r: 7 }), false);
+});
+
+test('числа мира читаются по именам, и пропуск — отказ, а не подстановка (1.3, 1.4)', () => {
+  const num = readNumbers(manifest.cfg);
+  for (const k of NEEDED) assert.equal(num[k], manifest.cfg[k], 'число ' + k + ' прочитано не из манифеста');
+  assert.equal(Object.keys(num).length, NEEDED.length, 'в наборе есть числа, которых нет в списке нужных');
+
+  /* сдвиг мира переименовал или убрал ключ: играть по прошлогоднему числу
+     хуже, чем не играть — поэтому отказ с именем ключа */
+  for (const k of NEEDED) {
+    const holed = { ...manifest.cfg };
+    delete holed[k];
+    assert.throws(() => readNumbers(holed), new RegExp(k), 'пропуск ' + k + ' прошёл молча');
+  }
+  assert.throws(() => readNumbers({ ...manifest.cfg, heatEnemy: Number.NaN }), /heatEnemy/);
+  assert.throws(() => new Valley({ ...manifest, cfg: {} }), /числа мира/);
 });
 
 test('числа мира в манифесте — приложение А.1', () => {

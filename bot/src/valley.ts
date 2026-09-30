@@ -8,6 +8,8 @@
 
 import type { ClsName, FindKind, Hex, Manifest, NeedleSpec, SlotName } from '@zoria/protocol';
 import type { RulesOracle } from '@zoria/sdk';
+import { readNumbers } from './numbers.js';
+import type { WorldNumbers } from './numbers.js';
 
 export const DIRS: readonly [number, number][] = [
   [1, 0],
@@ -71,6 +73,8 @@ export class Valley {
   readonly cherta: number;
   readonly ticks: number;
   readonly dawnAt: number;
+  /** Числа мира, прочитанные по именам: отсутствующее — отказ, а не подстановка. */
+  readonly num: WorldNumbers;
   readonly cfg: Record<string, number>;
   readonly needles: Map<string, NeedleSpec>;
   /** Free ruins of the valley (rule 5.6): neither start needles nor the ring. */
@@ -89,6 +93,7 @@ export class Valley {
     this.ticks = m.ticks;
     this.dawnAt = m.dawn.at;
     this.cfg = m.cfg;
+    this.num = readNumbers(m.cfg);
     this.seats = m.seats;
 
     const types = m.terrain.types;

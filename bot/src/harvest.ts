@@ -168,9 +168,8 @@ export class HarvestBot extends BlankBot {
        commands are paid from, so the command budget is what is left over. A jam
        we hold takes its own 8 bytes a tick on top of the hands (11.1). */
     const hands =
-      obs.mine.units.filter((u) => this.acting(u, v)).length * (v.cfg['chanTick'] ?? 32) +
-      obs.mine.jams.length * (v.cfg['jamKeep'] ?? 8);
-    const cost = v.cfg['chanOrder'] ?? 32;
+      obs.mine.units.filter((u) => this.acting(u, v)).length * v.num.chanTick + obs.mine.jams.length * v.num.jamKeep;
+    const cost = v.num.chanOrder;
     let room = Math.max(0, Math.floor((chanAt - hands) / cost));
     room = Math.min(room, tick.cmds);
 
@@ -358,7 +357,7 @@ export class HarvestBot extends BlankBot {
     if (!spec || spec.start !== null) return false;
     const own = this.owner.get(k);
     if (own === this.slot) return false;
-    const grace = v.cfg['capGrace'] ?? 60;
+    const grace = v.num.capGrace;
     const at = this.capAt.get(k);
     if (at !== undefined && t - at < grace) return false;
     if (t < v.dawnAt && v.inCherta({ q, r })) return false;
@@ -512,7 +511,7 @@ export class HarvestBot extends BlankBot {
          needle it darkens is one the owner's thread most likely reaches - the
          only case that yields loot at all. */
       const near = Math.min(...this.anchors.map((a) => hexDist(a, at)));
-      if (near > (v.cfg['linkRange'] ?? 5)) continue;
+      if (near > v.num.linkRange) continue;
       const d = hexDist(from, at);
       if (d < bestD) {
         bestD = d;
@@ -548,10 +547,10 @@ export class HarvestBot extends BlankBot {
   /** The whole price table of rule 9.2: a silent needle is taken for 16, not 24. */
   private heatTicks(k: string, v: Valley, t: number): number {
     const own = this.owner.get(k);
-    const free = v.cfg['heatNeedle'] ?? 8;
+    const free = v.num.heatNeedle;
     if (own === null) return free;
     if (own === 'K' && t >= v.dawnAt) return free;
-    return this.dark.get(k) === true ? (v.cfg['heatDark'] ?? 16) : (v.cfg['heatEnemy'] ?? 24);
+    return this.dark.get(k) === true ? v.num.heatDark : v.num.heatEnemy;
   }
 
   /** Nearest free needle the thread can hold: ruins always, the ring after dawn. */
@@ -578,7 +577,7 @@ export class HarvestBot extends BlankBot {
     for (const c of near.slice(0, 8)) {
       const walk = v.travel(o, from, c.at, 'ткач');
       if (walk === null) continue;
-      const pull = v.needles.get(c.k)?.ring || v.needles.get(c.k)?.spoke ? (v.cfg['dawnRing'] ?? 2) : 1;
+      const pull = v.needles.get(c.k)?.ring || v.needles.get(c.k)?.spoke ? v.num.dawnRing : 1;
       const held = 1 + 0.35 * Math.min(this.links(c.at, o), 4);
       const score = (pull * held) / (walk + this.heatTicks(c.k, v, obs.t));
       if (score > bestScore) {
@@ -622,7 +621,7 @@ export class HarvestBot extends BlankBot {
   }
 
   private sitePlan(obs: Observe, v: Valley, o: RulesOracle, from: Hex, busy: Set<string>, onlyRelight: boolean): Plan | null {
-    const price = v.cfg['costNeedle'] ?? 60;
+    const price = v.num.costNeedle;
     if (obs.pulse.energy < price + this.dials.buildSpare + this.reserve) return null;
     if (obs.t >= v.dawnAt) return null;
 
@@ -657,7 +656,7 @@ export class HarvestBot extends BlankBot {
 
   /** Our own needles that went dark from a cut thread, not from a jam (7.4, 11.4). */
   private cutNeedles(obs: Observe, v: Valley): Hex[] {
-    const hold = v.cfg['jamHold'] ?? 20;
+    const hold = v.num.jamHold;
     const out: Hex[] = [];
     for (const n of obs.mine.needles) {
       if (!n.dark) continue;
@@ -740,9 +739,9 @@ export class HarvestBot extends BlankBot {
   /* --- spending -------------------------------------------------------- */
 
   private yardOrder(obs: Observe, v: Valley): Order | null {
-    const wTkach = v.cfg['weightTkach'] ?? 2;
-    const wKlinok = v.cfg['weightKlinok'] ?? 1;
-    const cap = v.cfg['squadWeight'] ?? 8;
+    const wTkach = v.num.weightTkach;
+    const wKlinok = v.num.weightKlinok;
+    const cap = v.num.squadWeight;
     const tkachi = obs.mine.units.filter((u) => u.cls === 'ткач').length;
     const klinoks = obs.mine.units.length - tkachi;
     const weight = (tkachi + this.pending['ткач']) * wTkach + (klinoks + this.pending['клинок']) * wKlinok;
@@ -758,10 +757,10 @@ export class HarvestBot extends BlankBot {
        buying the moment the ceiling is one weight away. */
     const wish: { cls: ClsName; price: number; w: number }[] = [];
     if (klinoks + this.pending['клинок'] < this.dials.klinoks && obs.pulse.chanAt >= this.dials.jamChan) {
-      wish.push({ cls: 'клинок', price: v.cfg['costKlinok'] ?? 50, w: wKlinok });
+      wish.push({ cls: 'клинок', price: v.num.costKlinok, w: wKlinok });
     }
     if (tkachi + this.pending['ткач'] < this.dials.tkachi) {
-      wish.push({ cls: 'ткач', price: v.cfg['costTkach'] ?? 90, w: wTkach });
+      wish.push({ cls: 'ткач', price: v.num.costTkach, w: wTkach });
     }
     for (const want of wish) {
       if (weight + want.w > cap) continue;
@@ -776,7 +775,7 @@ export class HarvestBot extends BlankBot {
 
   /** A lot is two ruins with no walk and no heating, at second price (17.5). */
   private bidOrder(obs: Observe, v: Valley, o: RulesOracle): Extract<Order, { kind: 'bid' }> | null {
-    const reserveBid = v.cfg['costNeedle'] ?? 60;
+    const reserveBid = v.num.costNeedle;
     this.reserve = 0;
     for (const [i, lot] of v.lots().entries()) {
       if (this.bidden.has(i) || obs.t >= lot.at) continue;
@@ -822,7 +821,7 @@ export class HarvestBot extends BlankBot {
     const idle = obs.mine.units.find((u) => u.task === null && u.wait === 0);
     if (idle) return { kind: 'halt', unit: idle.id };
     const at = this.focus ?? this.hearth;
-    if (obs.pulse.chanAt < (v.cfg['chanOrder'] ?? 32)) return null;
+    if (obs.pulse.chanAt < v.num.chanOrder) return null;
     return { kind: 'watch', q: at.q, r: at.r, keep: 0 };
   }
 }
