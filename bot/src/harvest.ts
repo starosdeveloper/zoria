@@ -109,12 +109,16 @@ export class HarvestBot extends BlankBot {
   private readonly badSite = new Set<string>();
   /** Cells a move was refused for, with the tick of the refusal. */
   private readonly badGoal = new Map<string, number>();
+  /** Машины на сотах этого такта: сота -> имя машины. Чистится каждый такт. */
+  private readonly bodies = new Map<string, string>();
 
   /** Plans started and money spent, for the sparring script: where the four Tkachi went.
       `silent` is the longest run of silent ticks (23.2): the charter takes the slot at 6, so
       this number answers P2-04 without a thirty-minute run at match tempo. `sent` and `nacks`
       count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
-  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, nacks: 0, silent: 0 };
+  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, silent: 0 };
+  /** Отказы по кодам протокола: код -> сколько раз (04-protocol.md, 6.6). */
+  readonly denyBy = new Map<number, number>();
 
   private t = 0;
   /** What each command of the last frame was about, so a verdict can be acted on. */
@@ -213,6 +217,7 @@ export class HarvestBot extends BlankBot {
        a break (04-protocol.md, 8) starts at tick 600 with nothing accepted yet,
        and 600 ticks of silence would be a lie about the slot. */
     if (out.length) this.stat.sent++;
+    this.stat.orders += out.length; // знаменатель доли отказов K3
     if (this.joined < 0) this.joined = obs.t - 1;
     this.stat.silent = Math.max(this.stat.silent, obs.t - Math.max(this.lastOk, this.joined));
 
@@ -240,6 +245,12 @@ export class HarvestBot extends BlankBot {
   seen(verdicts: readonly [number, boolean, number][]): void {
     if (verdicts.some(([, ok]) => ok)) this.lastOk = this.t;
     this.stat.nacks += verdicts.filter(([, ok]) => !ok).length;
+    /* Отказы по причинам: К3 даёт 2 балла только при нуле отказов и 1 до 0.5 %
+       поданных команд (оценивание 8.5). Чтобы не разбирать потом журнал партии,
+       причина считается здесь же — голова знает её раньше всех. */
+    for (const [, ok, code] of verdicts) {
+      if (!ok) this.denyBy.set(code, (this.denyBy.get(code) ?? 0) + 1);
+    }
     /* Ground that refuses once refuses every tick: a refused site is remembered
        and the plan dropped, or the Tkach would stand there paying hands for a
        needle that will not rise (12.2, 13.6). */
@@ -319,6 +330,21 @@ export class HarvestBot extends BlankBot {
 
     const live = new Set(obs.mine.units.map((u) => u.id));
     for (const id of [...this.plans.keys()]) if (!live.has(id)) this.plans.delete(id);
+
+    /* Cells a machine stands on this tick. A cell with any body in it - ours or
+       a rival's - is refused as `земля` the moment it is named as a target
+       (04-protocol.md, 6.6; rule 10.7), and that refusal is not free: it counts
+       against K3 and it eats the tick's command without moving anyone. Rivals
+       are only the ones in sight; the rest is what the refusal is still for. */
+    this.bodies.clear();
+    for (const u of obs.mine.units) this.bodies.set(key(u.q, u.r), u.id);
+    for (const f of obs.foe) this.bodies.set(key(f.q, f.r), f.id);
+  }
+
+  /** Is this cell held by a machine other than `who`? */
+  private held(k: string, who?: string): boolean {
+    const id = this.bodies.get(k);
+    return id !== undefined && id !== who;
   }
 
   /** Hearth plus needles that burn at full weight: only those carry the thread. */
@@ -418,6 +444,9 @@ export class HarvestBot extends BlankBot {
     if (!here) {
       /* Already walking there: the node keeps the path, we keep the channel. */
       if (u.task !== null && u.task.path > 0) return null;
+      /* Somebody is standing on the target right now: naming it would come back
+         `земля` (10.7). Waiting a tick costs nothing - the body is walking too. */
+      if (this.held(plan.key, u.id)) return null;
       return { kind: 'move', unit: u.id, q: plan.at.q, r: plan.at.r, goal: null, home: false };
     }
     if (plan.kind === 'take') return null; // standing on the needle is the heating
@@ -428,6 +457,14 @@ export class HarvestBot extends BlankBot {
     }
     if (u.task !== null && u.task.site !== null) return null;
     if (u.cls !== 'ткач') return null;
+    /* Майданчик проверялся при выборе плана, а Ткач шёл к нему тактами: за это
+       время сота могла стать непригодной (12.2), и команда вернулась бы отказом.
+       Проверка повторяется перед подачей, а сота запоминается негодной. */
+    const v = this.valley;
+    if (v && !this.buildable(plan.key, plan.at, v)) {
+      this.badSite.add(plan.key);
+      return null;
+    }
     return { kind: 'needle', unit: u.id, q: plan.at.q, r: plan.at.r };
   }
 
@@ -440,6 +477,7 @@ export class HarvestBot extends BlankBot {
     for (const n of ring(at, 1)) {
       const k = key(n.q, n.r);
       if (!v.inValley(n.q, n.r) || !v.at(k).pass || v.needles.has(k)) continue;
+      if (this.held(k, u.id)) continue; // занятая сота отобьётся как `земля` (10.7)
       const d = hexDist({ q: u.q, r: u.r }, n);
       if (d < bestD) {
         bestD = d;
@@ -781,7 +819,10 @@ export class HarvestBot extends BlankBot {
       if (this.bidden.has(i) || obs.t >= lot.at) continue;
       const worth = lot.cells.some((c) => this.owner.get(key(c.q, c.r)) === null && this.threaded(c, o));
       if (!worth) continue;
-      const amount = Math.min(this.dials.bid, obs.pulse.energy);
+      /* Ставка — целое число заряда (17.3), а заряд накапливается по 0.25 за
+         такт (8.9): дробная сумма отбивается кодом `торги`, и конверт на этот
+         лот пропадает вместе с командой. */
+      const amount = Math.floor(Math.min(this.dials.bid, obs.pulse.energy));
       if (amount <= reserveBid) {
         /* Not enough energy yet: hold it back so the yard does not spend it. */
         if (lot.at - obs.t <= 3) this.reserve = reserveBid + 1;

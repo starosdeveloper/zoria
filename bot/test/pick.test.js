@@ -130,6 +130,14 @@ test('ставка на лот: сроки правила 17.3 и цена по 
   const small = poor.bidOrder(at(lot.at - 1, 70), valley, oracle);
   assert.equal(small.amount, 70, 'ставка выше запаса недействительна на розкритті (17.5)');
 
+  /* заряд копится по 0.25 за такт (8.9), а ставка — целое число (17.3):
+     дробная сумма отбивается кодом `торги`, и конверт на лот пропадает */
+  const frac = head();
+  frac.anchors = [SEAT, ...lot.cells];
+  const rounded = frac.bidOrder(at(lot.at - 1, 70.75), valley, oracle);
+  assert.equal(Number.isInteger(rounded.amount), true, 'ставка дробная: ' + rounded.amount);
+  assert.equal(rounded.amount, 70, 'округление не вниз: запас меньше ставки — отказ на розкритті');
+
   const broke = head();
   broke.anchors = [SEAT, ...lot.cells];
   assert.equal(broke.bidOrder(at(lot.at - 1, cfg['costNeedle']), valley, oracle), null, 'ставка не выше резерва торгов');

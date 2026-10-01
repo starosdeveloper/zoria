@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { key } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
-import { bareHead as head, cfg, manifest, RING, RUIN, START_B, valley } from './world.js';
+import { bareHead as head, cfg, manifest, RING, RUIN, SITE, START_B, valley } from './world.js';
 
 test('цены прогрева — вся таблица правила 9.2', () => {
   const b = head();
@@ -198,9 +198,30 @@ test('шаг плана: стоять и гріти, живити на мест�
   assert.deepEqual(b.planStep(plan('feed'), here), { kind: 'feed', unit: 'T-A1', q: at.q, r: at.r });
   assert.equal(b.planStep(plan('feed'), unit('T-A1', { ...at, task: task({ feed: at }) })), null, 'живлення уже стоит');
 
-  assert.deepEqual(b.planStep(plan('build'), here), { kind: 'needle', unit: 'T-A1', q: at.q, r: at.r });
-  assert.equal(b.planStep(plan('build'), unit('T-A1', { ...at, task: task({ site: at }) })), null, 'стройка уже идёт');
-  assert.equal(b.planStep(plan('build'), unit('K-A1', { cls: 'клинок', ...at })), null, 'Клинок не строит (12.5)');
+  /* стройка — на свободной соте: на соте с голкой команда вернулась бы отказом,
+     и шаг плана обязан это увидеть сам, а не узнать от воротаря */
+  const site = { q: SITE.q, r: SITE.r };
+  const sitePlan = { kind: 'build', at: site, key: key(site.q, site.r), since: 0 };
+  const atSite = unit('T-A1', { ...site });
+  assert.deepEqual(b.planStep(sitePlan, atSite), { kind: 'needle', unit: 'T-A1', q: site.q, r: site.r });
+  assert.equal(b.planStep(sitePlan, unit('T-A1', { ...site, task: task({ site }) })), null, 'стройка уже идёт');
+  assert.equal(b.planStep(sitePlan, unit('K-A1', { cls: 'клинок', ...site })), null, 'Клинок не строит (12.5)');
+  assert.equal(b.planStep(plan('build'), here), null, 'стройка на соте с голкой: отказ не подаётся вовсе');
+  assert.equal(b.badSite.has(k), true, 'негодная сота не запомнена');
+});
+
+test('занятая сота целью не называется: отказ `земля` стоит балла K3 (10.7)', () => {
+  const b = head();
+  const at = { q: RUIN.q, r: RUIN.r };
+  const plan = { kind: 'take', at, key: key(at.q, at.r), since: 0 };
+  const away = unit('T-A1', { q: 6, r: -12 });
+  assert.ok(b.planStep(plan, away), 'сота свободна, а хода нет');
+
+  b.bodies.set(key(at.q, at.r), 'K-B7'); // чужая машина стоит на цели
+  assert.equal(b.planStep(plan, away), null, 'ход на занятую соту подан');
+
+  b.bodies.set(key(at.q, at.r), 'T-A1'); // на цели стоит она сама
+  assert.ok(b.planStep(plan, unit('T-A1', { q: 6, r: -12 })), 'своё же тело приняли за помеху');
 });
 
 test('фокус ставится не чаще раза в 40 тактов и только на работу', () => {

@@ -79,8 +79,13 @@ for (const seed of SEEDS) {
   console.log('жереб ' + seed + ':');
   row('жатва', seed, a);
   if (process.env.SPAR_WHY) {
+    const WORD = ['', 'сміття', 'стеля', 'машина', 'поворот', 'тариф', 'канал', 'вуха', 'верф', 'заряд', 'вага рою', 'земля', 'немає шляху', 'не своя голка', 'спалах', 'погляд', 'таран', 'ціль', 'глушіння', 'угода', 'клич', 'відмова', 'торги'];
     heads.forEach((h, i) => {
       console.log('      плани ' + (i + 1) + ': ' + Object.entries(h.stat).map(([k, n]) => k + ' ' + n).join(', '));
+      /* доля отказов — метрика K3 (оценивание 8.5): 0 отказов 2 балла, до 0.5 % — 1 */
+      const share = h.stat.orders ? ((h.stat.nacks / h.stat.orders) * 100).toFixed(2) : '0.00';
+      const why = [...h.denyBy].map(([c, n]) => (WORD[c] || c) + ' ' + n).join(', ') || 'нет';
+      console.log('      отказов ' + h.stat.nacks + ' из ' + h.stat.orders + ' = ' + share + '%   причины: ' + why);
     });
   }
   row('рівний', seed, b);
