@@ -7,27 +7,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeManifest } from '@zoria/protocol';
-import { RulesOracle } from '@zoria/sdk';
-import { createEngine } from '@zoria/engine';
-import { DIALS, HarvestBot } from '../dist/harvest.js';
-import { Valley, key } from '../dist/valley.js';
-import { manifestBytes, observe, task, unit } from './frames.js';
-
-const manifest = decodeManifest(manifestBytes);
-const valley = new Valley(manifest);
-const oracle = new RulesOracle(createEngine, manifestBytes);
-const cfg = manifest.cfg;
-const SEAT = { q: 6, r: -12 };
-const NONE = new Set();
-
-const head = (dials, anchors = [{ q: 5, r: -12 }, { q: 7, r: -13 }]) => {
-  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
-  b.init(manifestBytes, 'A');
-  b.anchors = [SEAT, ...anchors];
-  b.t = 300;
-  return b;
-};
+import { key } from '../dist/valley.js';
+import { observe, task, unit } from './frames.js';
+import { cfg, head, NONE, oracle, SEAT, valley } from './world.js';
 
 const busyUnits = (n) =>
   Array.from({ length: n }, (_, i) => unit('T-A' + (i + 1), { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }));

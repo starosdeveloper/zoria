@@ -6,27 +6,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeManifest } from '@zoria/protocol';
-import { RulesOracle } from '@zoria/sdk';
-import { createEngine } from '@zoria/engine';
-import { DIALS, HarvestBot } from '../dist/harvest.js';
-import { Valley, key } from '../dist/valley.js';
-import { manifestBytes, observe, unit } from './frames.js';
-
-const manifest = decodeManifest(manifestBytes);
-const valley = new Valley(manifest);
-const oracle = new RulesOracle(createEngine, manifestBytes);
-const cfg = manifest.cfg;
-const SEAT = { q: 6, r: -12 };
-const RUIN = { q: 2, r: -9 };
-
-const head = (dials, anchors = [{ q: 5, r: -12 }, { q: 7, r: -13 }]) => {
-  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
-  b.init(manifestBytes, 'A');
-  b.anchors = [SEAT, ...anchors];
-  b.t = 300;
-  return b;
-};
+import { DIALS } from '../dist/harvest.js';
+import { key } from '../dist/valley.js';
+import { observe, unit } from './frames.js';
+import { cfg, head, oracle, RUIN, SEAT, valley } from './world.js';
 
 const board = (cells, over = {}) => ({
   order: { cells, from: 200, to: 400, bonus: cfg['orderBonus'], holdTicks: cfg['orderHoldTicks'], ...over },

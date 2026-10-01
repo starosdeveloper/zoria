@@ -8,25 +8,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeManifest } from '@zoria/protocol';
-import { DIALS, HarvestBot } from '../dist/harvest.js';
-import { Valley, key } from '../dist/valley.js';
-import { manifestBytes, observe, task, unit } from './frames.js';
-
-const manifest = decodeManifest(manifestBytes);
-const valley = new Valley(manifest);
-const cfg = manifest.cfg;
-
-const head = (dials) => {
-  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
-  b.init(manifestBytes, 'A');
-  return b;
-};
-
-/* соты этой долины, нужные проверкам */
-const RUIN = { q: 2, r: -9 }; // ничья руина в 3 сотах от стартовой голки A
-const RING = valley.cellOf(valley.ringKeys[0]);
-const START_B = { q: 7, r: 5 };
+import { key } from '../dist/valley.js';
+import { observe, task, unit } from './frames.js';
+import { bareHead as head, cfg, manifest, RING, RUIN, START_B, valley } from './world.js';
 
 test('цены прогрева — вся таблица правила 9.2', () => {
   const b = head();

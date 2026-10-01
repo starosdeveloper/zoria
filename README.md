@@ -154,6 +154,8 @@ npx zaria-kit docs             # где лежат шесть документо
 ## Проверки
 
 ```bash
+pnpm cycles      # madge: циклов импорта нет
+pnpm clones      # jscpd: структурных клонов нет (порог 1 %)
 pnpm test        # vitest: кадры A–D, печать, фаза, глушение, регистрация без второго аккаунта, валидация, Markdown
 pnpm typecheck   # tsc по всем пакетам
 pnpm lint        # ESLint strict + правила под классы дефектов К5

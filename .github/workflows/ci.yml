@@ -19,11 +19,37 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
+      - run: pnpm cycles # циклы импорта, K5
+      - run: pnpm clones # структурные клоны, K5
       - run: pnpm test
       - run: node apps/watcher/src/main.ts selftest
       - run: pnpm build
       - name: .zoria is still in place (P1-07)
         run: test -s .zoria || (echo "::error::.zoria is missing from the repository root" && exit 1)
+
+  # Бот части 2 — свой npm-пакет вне воркспейса, и P2-01 требует именно
+  # `npm ci` в чистом checkout. Пакеты @zoria/* лежат в частном реестре, поэтому
+  # job работает только там, где задан секрет ZORIA_NPM_AUTH; без него тихо
+  # пропускается, а не падает на чужих форках.
+  bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: нет доступа к реестру — пропустить
+        id: gate
+        run: echo "go=${{ secrets.ZORIA_NPM_AUTH != '' }}" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.go == 'true'
+        working-directory: bot
+        env:
+          ZORIA_NPM_AUTH: ${{ secrets.ZORIA_NPM_AUTH }}
+        run: |
+          npm ci
+          npm run build
+          node --test test/
+          npx zaria-kit lint nakaz.yaml
 
   secrets:
     runs-on: ubuntu-latest
