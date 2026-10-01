@@ -448,6 +448,8 @@ bot/
 
 | Класс | Чем ловим |
 |---|---|
+Правила проверены на срабатывание 01.10: во временный файл в `bot/src` положены плавающий промис, пустой `catch` и `@ts-ignore` — линтер дал четыре отказа (`no-floating-promises`, `no-empty`, `ban-ts-comment`, плюс `require-await`), файл удалён. Правило, которое не умеет упасть, ничего не охраняет.
+
 | `floating-promise` | `@typescript-eslint/no-floating-promises`, `no-misused-promises` |
 | `unreleased-resource` | `try/finally`, `using`/`Symbol.asyncDispose` (Node 24), `AbortController` на каждый владелец |
 | `empty-catch`, `error-suppression` | `no-empty`, запрет `catch {}` без лога и проброса, запрет `// @ts-ignore` |
