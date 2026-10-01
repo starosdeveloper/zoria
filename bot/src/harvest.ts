@@ -32,6 +32,7 @@ import { dist, hexDist, key, ring, same, Valley } from './valley.js';
 
 /* Refusal codes that mean "this cell will not do", from the protocol table
    (04-protocol.md, 6.6): impassable ground, no path, refusal without a word. */
+const DENY_GARBAGE = 1;
 const DENY_LAND = 11;
 const DENY_PATH = 12;
 const DENY_OTHER = 21;
@@ -116,7 +117,7 @@ export class HarvestBot extends BlankBot {
       `silent` is the longest run of silent ticks (23.2): the charter takes the slot at 6, so
       this number answers P2-04 without a thirty-minute run at match tempo. `sent` and `nacks`
       count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
-  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, silent: 0 };
+  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
   /** Отказы по кодам протокола: код -> сколько раз (04-protocol.md, 6.6). */
   readonly denyBy = new Map<number, number>();
 
@@ -245,9 +246,20 @@ export class HarvestBot extends BlankBot {
   seen(verdicts: readonly [number, boolean, number][]): void {
     if (verdicts.some(([, ok]) => ok)) this.lastOk = this.t;
     this.stat.nacks += verdicts.filter(([, ok]) => !ok).length;
+    /* Один кривой приказ делает мусором весь кадр: вузол отвечает единственным
+       вердиктом `[0, false, 1]` на кадр, а не на команду (04-protocol, 6.3).
+       Учить по нему нулевую команду — значит обвинить невиновную соту: она
+       попадёт в негодные, и голова перестанет туда ходить без причины. */
+    const garbage = verdicts.length === 1 && verdicts[0] !== undefined && !verdicts[0][1] && verdicts[0][2] === DENY_GARBAGE;
+    if (garbage) {
+      this.stat.garbage++;
+      this.denyBy.set(DENY_GARBAGE, (this.denyBy.get(DENY_GARBAGE) ?? 0) + 1);
+      return;
+    }
     /* Отказы по причинам: К3 даёт 2 балла только при нуле отказов и 1 до 0.5 %
        поданных команд (оценивание 8.5). Чтобы не разбирать потом журнал партии,
-       причина считается здесь же — голова знает её раньше всех. */
+       причина считается здесь же — голова знает её раньше всех. Мусорный кадр
+       считается выше отдельно: он один на весь кадр, а не на команду. */
     for (const [, ok, code] of verdicts) {
       if (!ok) this.denyBy.set(code, (this.denyBy.get(code) ?? 0) + 1);
     }

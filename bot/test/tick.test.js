@@ -98,6 +98,22 @@ test('отказ верфи возвращает счётчик корпусов
   assert.equal(b.pending['ткач'], 0, 'корпуса нет, а счётчик держит — верфь замолчит до конца партии');
 });
 
+test('мусорный кадр не учит нулевую команду: вердикт один на кадр (6.3)', () => {
+  const b = head();
+  const free = unit('T-A1');
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: [free] } }));
+  assert.ok(out.length, 'команд нет вовсе');
+  const plan = b.plans.get('T-A1');
+  assert.ok(plan, 'плана нет');
+
+  b.seen([[0, false, 1]]); // сміття: один вердикт на весь кадр
+  assert.equal(b.plans.has('T-A1'), true, 'мусорный кадр снял план невиновной машины');
+  assert.equal(b.badGoal.size, 0, 'мусорный кадр записал соту негодной');
+  assert.equal(b.badSite.size, 0);
+  assert.equal(b.stat.garbage, 1, 'мусорный кадр не посчитан');
+  assert.equal(b.denyBy.get(1), 1);
+});
+
 test('кривые байты вердикта голову не роняют', () => {
   const b = head();
   b.feedback(new Uint8Array([0xff, 0xff]));
