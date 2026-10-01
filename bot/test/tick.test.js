@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { key } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
-import { cfg, head, NONE, oracle, SEAT, valley } from './world.js';
+import { cfg, head, hexDist, NONE, oracle, SEAT, valley } from './world.js';
 
 const busyUnits = (n) =>
   Array.from({ length: n }, (_, i) => unit('T-A' + (i + 1), { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }));
@@ -87,6 +87,42 @@ test('вердикты: принятая команда держит слот, �
 
   b.seen([[move, true, 0]]);
   assert.equal(b.lastOk, b.t, 'принятая команда не сбросила счётчик молчания');
+});
+
+test('корпус в очереди верфи занимает вес рою, хоть его и не видно (10.3, 26.2)', () => {
+  /* Именно на этом погорел образец грамоты SDK: `build_drone` считает машины
+     на поле, корпус в очереди в кадр не приходит, и он двадцать один раз
+     заказывал машину в полный рой, получая `вага рою`. */
+  const b = head();
+  const at = (energy) => observe({ t: 10, pulse: { chanAt: 400, energy }, mine: { units: [unit('T-A1'), unit('T-A2'), unit('T-A3')] } });
+  assert.deepEqual(b.yardOrder(at(900), valley), { kind: 'yard', cls: 'ткач' }, 'три машины, место есть — заказа нет');
+  assert.equal(b.pending['ткач'], 1);
+  assert.equal(
+    b.yardOrder(at(900), valley),
+    null,
+    'второй заказ при трёх машинах и одном корпусе в очереди: это вес 8 из 8',
+  );
+  b.sync(observe({ t: 12, events: [{ type: 'build', p: 'A', cls: 'ткач' }] }), valley);
+  assert.equal(b.pending['ткач'], 0, 'корпус вышел, а счётчик держит');
+});
+
+test('машины такта: свои и видимые чужие (10.7)', () => {
+  const b = head();
+  b.sync(
+    observe({
+      t: 300,
+      mine: { units: [unit('T-A1', { q: 6, r: -12 })] },
+      foe: [{ id: 'K-B3', p: 'B', cls: 'клинок', q: 2, r: -9 }],
+    }),
+    valley,
+  );
+  assert.equal(b.held('6,-12', 'T-A1'), false, 'своё же тело принято за помеху');
+  assert.equal(b.held('6,-12', 'T-A2'), true, 'соту под своей машиной считаем свободной');
+  assert.equal(b.held('2,-9'), true, 'чужая машина в кадре не учтена');
+  assert.equal(b.held('0,0'), false);
+  /* карта тел живёт один такт: машины ходят */
+  b.sync(observe({ t: 301, mine: { units: [] } }), valley);
+  assert.equal(b.held('2,-9'), false, 'тела прошлого такта остались в карте');
 });
 
 test('отказ верфи возвращает счётчик корпусов (10.3)', () => {
@@ -167,6 +203,24 @@ test('стройка: порог buildGate и запас заряда под ц�
     null,
     'стройка после зори: голка не успеет окупиться',
   );
+});
+
+test('майданчик ищется в кольцах 3-5 от своей голки, не вплотную', () => {
+  /* Вплотную к своей голке новая не нужна: её покрытие уже накрыто (8.3), и
+     первое-второе кольцо дало бы прирост почти нулевой. Дальше пятого нить
+     не дотянется (linkRange 5). Проверка держит форму поиска: при сдвиге
+     радиусов план уедет либо в упор, либо за нить. */
+  const b = head({ buildGate: 0 });
+  const seen = new Set();
+  for (let i = 0; i < 12; i++) {
+    const plan = b.sitePlan(observe({ t: 300, pulse: { energy: 300 } }), valley, oracle, SEAT, seen, false);
+    if (!plan) break;
+    seen.add(plan.key);
+    const near = Math.min(...b.anchors.map((a) => hexDist(a, plan.at)));
+    assert.ok(near >= 3, 'майданчик вплотную к своей голке: ' + plan.key + ', до сети ' + near);
+    assert.ok(near <= valley.num.linkRange, 'майданчик за длиной нити: ' + plan.key + ', до сети ' + near);
+  }
+  assert.ok(seen.size > 0, 'ни одного майданчика не нашлось');
 });
 
 test('пере-зажигание требует своих погасших голок, иначе плана нет', () => {

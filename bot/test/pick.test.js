@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { key } from '../dist/valley.js';
 import { DIALS, HarvestBot } from '../dist/harvest.js';
 import { observe, task, unit, manifestBytes } from './frames.js';
-import { cfg, head, NONE, oracle, RUIN, SEAT, valley } from './world.js';
+import { cfg, head, hexDist, NONE, oracle, RUIN, SEAT, valley } from './world.js';
 
 test('берём ближнюю ничью руину, которую держит нить (7.2, 9.2)', () => {
   const b = head();
@@ -29,6 +29,36 @@ test('чужую и свою голку в цели не берём, занят�
   assert.notEqual(second?.key, first.key, 'цель занята соперником, а мы идём');
   const third = b.takePlan(observe({ t: 300 }), valley, oracle, SEAT, new Set([second.key]));
   assert.notEqual(third?.key, second.key, 'цель уже в чужом плане');
+});
+
+test('из двух равных целей берётся та, что дешевле прогреть (9.2)', () => {
+  /* два соседа одной стартовой голки: дорога одинаковая, цена разная.
+     Мовчазна чужая голка — 16 тактов, горящая чужая — 24, ничья — 8. */
+  const b = head();
+  const near = valley.ruins
+    .map((k) => ({ k, at: valley.cellOf(k), d: hexDist(SEAT, valley.cellOf(k)) }))
+    .filter((x) => b.anchors.some((a) => oracle.linkOk(x.at, a)))
+    .sort((a, b2) => a.d - b2.d);
+  assert.ok(near.length >= 2, 'в этой долине нечего сравнивать');
+  const [first, second] = near;
+
+  /* делаем ближнюю цель чужой и горящей — 24 такта вместо 8 */
+  b.owner.set(first.k, 'B');
+  b.dark.set(first.k, false);
+  const plan = b.takePlan(observe({ t: 300 }), valley, oracle, SEAT, NONE);
+  assert.ok(plan, 'цели нет');
+  assert.notEqual(plan.key, first.k, 'пошли на чужую горящую, хотя рядом ничья');
+  assert.equal(b.owner.get(plan.key), null, 'цель не ничья: ' + plan.key);
+  assert.ok(second, 'второй цели не нашлось');
+});
+
+test('чужая голка целью прогрева не становится и после зори', () => {
+  const b = head();
+  for (const k of valley.ruins) b.owner.set(k, 'B');
+  const plan = b.takePlan(observe({ t: valley.dawnAt + 5 }), valley, oracle, SEAT, NONE);
+  /* все руины чужие, а кольцо до нашей сети не дотянуто — честный ответ «цели
+     нет», но ни в каком случае не чужая голка за 24 такта */
+  assert.ok(!plan || b.owner.get(plan.key) !== 'B', 'цель — чужая голка: ' + JSON.stringify(plan));
 });
 
 test('кольцо Ключника — цель только после зори (22.3)', () => {

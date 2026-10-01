@@ -13,10 +13,11 @@
     "play": "npm run build && zaria-kit pack",
     "lint:nakaz": "zaria-kit lint nakaz.yaml",
     "test": "npm run build && node --test test/",
-    "mutate": "npm run build && stryker run",
+    "mutate": "npm run build && nice -n 19 node --v8-pool-size=1 node_modules/.bin/stryker run",
+    "mutate:part": "npm run build && nice -n 19 node --v8-pool-size=1 node_modules/.bin/stryker run --mutate",
     "check": "npm run build && node --test test/ && zaria-kit lint nakaz.yaml",
-    "spar": "npm run build && node spar.js",
-    "tourney": "npm run build && node tourney.js"
+    "spar": "npm run build && nice -n 19 node --v8-pool-size=1 spar.js",
+    "tourney": "npm run build && nice -n 19 node --v8-pool-size=1 tourney.js"
   },
   "zaria": {
     "bot": "node dist/main.js",

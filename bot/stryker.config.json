@@ -13,8 +13,9 @@
     "maxTestsToLog": 0,
     "reportTests": false
   },
-  "timeoutMS": 60000,
-  "concurrency": 4,
+  "timeoutMS": 120000,
+  "_comment3": "concurrency 1 намеренно: четыре воркера съедали машину целиком, и редактор закрывался сам. Прогон становится вчетверо дольше, зато идёт в фоне и не отбирает машину — мерить нечем, если мерить нельзя.",
+  "concurrency": 1,
   "coverageAnalysis": "off",
   "thresholds": { "high": 80, "low": 60, "break": null }
 }
