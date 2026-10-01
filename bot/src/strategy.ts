@@ -19,6 +19,8 @@ export const HARVEST = 'жатва';
 export interface Strategy extends WireBot {
   /* кадр щоденника віри такту; null - кадру немає */
   belief(obs: Observe | null): BeliefFrame | null;
+  /* короткий рядок про свої команди і відмови в кінці партії; '' - немовчати нічого */
+  report(): string;
 }
 
 class HarvestStrategy implements Strategy {
@@ -41,6 +43,10 @@ class HarvestStrategy implements Strategy {
   /* no mirror world here: the journal is assembled from the observation */
   belief(obs: Observe | null): BeliefFrame | null {
     return this.book && obs ? this.book.frame(obs) : null;
+  }
+
+  report(): string {
+    return this.head.report();
   }
 }
 
@@ -69,6 +75,11 @@ class MirrorStrategy implements Strategy {
   belief(obs: Observe | null): BeliefFrame | null {
     const E = this.head.mirror();
     return this.trace && E ? this.trace.frame(E, obs) : null;
+  }
+
+  /* дзеркало своїх команд не рахує: їх рахує рушій усередині нього */
+  report(): string {
+    return '';
   }
 }
 

@@ -64,6 +64,19 @@ test('майданчик: условия правила 12.2', () => {
   assert.equal(b.buildable(key(seat.q, seat.r + 1), { q: seat.q, r: seat.r + 1 }, valley), false, 'ближе 2 от вогнища');
   assert.equal(b.buildable(key(seat.q + 3, seat.r), { q: seat.q + 3, r: seat.r }, valley), true, 'дальше 2 от вогнища');
 
+  /* голка, поставленная в бою, в манифест не входит (26.2) — значит знать о ней
+     можно только из памяти, и сота обязана перестать быть майданчиком */
+  const raised = head();
+  const spot = { q: SITE.q, r: SITE.r };
+  const spotK = key(spot.q, spot.r);
+  assert.equal(raised.buildable(spotK, spot, valley), true, 'свободная сота не годится в майданчик');
+  raised.sync(observe({ t: 300, events: [{ type: 'raise', p: 'A', q: spot.q, r: spot.r }] }), valley);
+  assert.equal(raised.buildable(spotK, spot, valley), false, 'на соте уже стоит своя голка, а майданчик годен');
+
+  const seen = head();
+  seen.sync(observe({ t: 300, own: [{ q: spot.q, r: spot.r, owner: 'B', dark: false }] }), valley);
+  assert.equal(seen.buildable(spotK, spot, valley), false, 'чужую голку на соте не учли');
+
   const dead = [...valley.finds].find(([, kind]) => kind === 'dead');
   if (dead) {
     const at = valley.cellOf(dead[0]);

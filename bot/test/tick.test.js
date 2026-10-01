@@ -111,7 +111,7 @@ test('мусорный кадр не учит нулевую команду: в�
   assert.equal(b.badGoal.size, 0, 'мусорный кадр записал соту негодной');
   assert.equal(b.badSite.size, 0);
   assert.equal(b.stat.garbage, 1, 'мусорный кадр не посчитан');
-  assert.equal(b.denyBy.get(1), 1);
+  assert.equal(b.denyBy.get('1:кадр'), 1, 'мусор записан как отказ команде, а он на кадр');
 });
 
 test('кривые байты вердикта голову не роняют', () => {

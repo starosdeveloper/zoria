@@ -27,7 +27,7 @@ import { BlankBot } from '@zoria/sdk';
 import { RulesOracle } from '@zoria/sdk';
 import { createEngine } from '@zoria/engine';
 import { decodeVerdicts } from '@zoria/protocol';
-import type { ActorName, ClsName, Hex, MineUnit, Observe, Order, SlotName } from '@zoria/protocol';
+import type { ActorName, ClsName, Hex, MineUnit, Observe, Order, OrderKind, SlotName } from '@zoria/protocol';
 import { dist, hexDist, key, ring, same, Valley } from './valley.js';
 
 /* Refusal codes that mean "this cell will not do", from the protocol table
@@ -119,11 +119,11 @@ export class HarvestBot extends BlankBot {
       count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
   readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
   /** Отказы по кодам протокола: код -> сколько раз (04-protocol.md, 6.6). */
-  readonly denyBy = new Map<number, number>();
+  readonly denyBy = new Map<string, number>();
 
   private t = 0;
   /** What each command of the last frame was about, so a verdict can be acted on. */
-  private lastCmd: ({ unit?: string; site?: string; goal?: string; yard?: ClsName } | null)[] = [];
+  private lastCmd: ({ kind: OrderKind; unit?: string; site?: string; goal?: string; yard?: ClsName } | null)[] = [];
   /** Corpses ordered but not yet out of the yard: the frame does not show them (SDK 2). */
   private readonly pending: Record<ClsName, number> = { ткач: 0, клинок: 0 };
   private yardAt = -999;
@@ -224,16 +224,25 @@ export class HarvestBot extends BlankBot {
 
     this.lastCmd = out.map((c) =>
       c.kind === 'needle'
-        ? { unit: c.unit, site: key(c.q, c.r) }
+        ? { kind: c.kind, unit: c.unit, site: key(c.q, c.r) }
         : c.kind === 'move'
-          ? { unit: c.unit, goal: key(c.q, c.r) }
+          ? { kind: c.kind, unit: c.unit, goal: key(c.q, c.r) }
           : c.kind === 'feed'
-            ? { unit: c.unit }
+            ? { kind: c.kind, unit: c.unit }
             : c.kind === 'yard'
-              ? { yard: c.cls }
-              : null,
+              ? { kind: c.kind, yard: c.cls }
+              : { kind: c.kind },
     );
     return out;
+  }
+
+  /** Короткая сводка головы для строки конца партии.
+      `run.stats.orders` проводу — это кадры (по одному на такт), а лестница К3
+      считает **команды** (оценивание 8.5), поэтому знаменатель берётся свой. */
+  report(): string {
+    const share = this.stat.orders ? ((this.stat.nacks / this.stat.orders) * 100).toFixed(2) : '0.00';
+    const why = [...this.denyBy].map(([k, n]) => k + '×' + n).join(' ') || 'нет';
+    return 'команд ' + this.stat.orders + ', відмов ' + this.stat.nacks + ' (' + share + '%), причини ' + why + '; молчание ' + this.stat.silent;
   }
 
   /** The wire and the harness both deliver verdicts here (SDK 2, 7). */
@@ -253,15 +262,19 @@ export class HarvestBot extends BlankBot {
     const garbage = verdicts.length === 1 && verdicts[0] !== undefined && !verdicts[0][1] && verdicts[0][2] === DENY_GARBAGE;
     if (garbage) {
       this.stat.garbage++;
-      this.denyBy.set(DENY_GARBAGE, (this.denyBy.get(DENY_GARBAGE) ?? 0) + 1);
+      this.denyBy.set(DENY_GARBAGE + ':кадр', (this.denyBy.get(DENY_GARBAGE + ':кадр') ?? 0) + 1);
       return;
     }
     /* Отказы по причинам: К3 даёт 2 балла только при нуле отказов и 1 до 0.5 %
        поданных команд (оценивание 8.5). Чтобы не разбирать потом журнал партии,
        причина считается здесь же — голова знает её раньше всех. Мусорный кадр
        считается выше отдельно: он один на весь кадр, а не на команду. */
-    for (const [, ok, code] of verdicts) {
-      if (!ok) this.denyBy.set(code, (this.denyBy.get(code) ?? 0) + 1);
+    for (const [i, ok, code] of verdicts) {
+      if (ok) continue;
+      /* Причина плюс род команды: «земля» на `move` и «земля» на `needle` — две
+         разные ошибки, и по одному коду их не различить. */
+      const tag = code + ':' + (this.lastCmd[i]?.kind ?? '?');
+      this.denyBy.set(tag, (this.denyBy.get(tag) ?? 0) + 1);
     }
     /* Ground that refuses once refuses every tick: a refused site is remembered
        and the plan dropped, or the Tkach would stand there paying hands for a
@@ -426,7 +439,8 @@ export class HarvestBot extends BlankBot {
   private planDone(plan: Plan, obs: Observe, v: Valley): boolean {
     const mine = this.owner.get(plan.key) === this.slot;
     if (plan.kind === 'take') return mine || !this.heatable(plan.key, plan.at.q, plan.at.r, v, obs.t);
-    if (plan.kind === 'build') return v.needles.has(plan.key) || this.badSite.has(plan.key);
+    /* голка на соте — хоть манифестная, хоть поставленная в бою (26.2) */
+    if (plan.kind === 'build') return v.needles.has(plan.key) || this.owner.has(plan.key) || this.badSite.has(plan.key);
     if (plan.kind === 'feed') return !mine || obs.mine.needles.some((n) => key(n.q, n.r) === plan.key && n.dark);
     /* A jam holds while the needle is still someone else's and still burning:
        a dark or retaken needle yields no loot at all (8.7, 11.4). */
@@ -728,7 +742,12 @@ export class HarvestBot extends BlankBot {
   }
 
   private buildable(k: string, c: Hex, v: Valley): boolean {
-    if (!v.inValley(c.q, c.r) || v.needles.has(k)) return false;
+    if (!v.inValley(c.q, c.r)) return false;
+    /* Голки, побудовані в бою, до маніфесту не входять (26.2), поэтому карты
+       манифеста для «на соте нет голки» (12.2) не хватает: своя же свежая голка
+       и чужая, которую мы видели, живут только в памяти. Без этого Ткач ходил
+       строить на занятую соту и получал `земля` — все 17 отказов пакета. */
+    if (v.needles.has(k) || this.owner.has(k)) return false;
     const land = v.at(k);
     if (!land.pass || !land.build) return false;
     if (v.finds.get(k) === 'dead') return false;
