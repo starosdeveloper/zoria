@@ -38,7 +38,12 @@ const PAIRS = [
   [mirror('проривник'), mirror('рівний')],
   [charter('черепаха'), charter('тиск')],
   [charter('замовлення'), mirror('обхідник')],
-  [ourCharter(), mirror('шир')], // наша грамота как соперник: чего она стоит сама
+  /* Наша собственная грамота соперником: так видно, чего она стоит сама. Но этот
+     состав **не идёт в среднюю долю**: правка грамоты делает соперника сильнее,
+     и наша средняя падает, хотя голова не менялась. Ровно это и случилось 01→02.10
+     (2.44 → 1.89 на этом составе при неизменных 103 долях из 135 на остальных) —
+     состав, который сам же и меняется, мерить голову не может. */
+  [ourCharter(), mirror('шир'), { self: true }],
 ];
 
 const pick = process.env.TOURNEY_PAIRS
@@ -63,6 +68,8 @@ const pad = (s, n) => String(s).padEnd(n);
 let ourTotal = 0;
 let baseTotal = 0;
 let packs = 0;
+let cleanPacks = 0;
+let cleanTotal = 0;
 let worstSilence = 0;
 const rows = [];
 
@@ -81,27 +88,43 @@ for (const pair of pick) {
   }
   ourTotal += ours;
   baseTotal += base;
-  rows.push([name, ours, base]);
+  const self = pair[2]?.self === true;
+  if (!self) {
+    cleanTotal += ours;
+    cleanPacks += SEEDS.length;
+  }
+  rows.push([name, ours, base, self]);
 }
 process.stderr.write('\n');
 
 const maxShare = SEEDS.length * 9;
 console.log('состав'.padEnd(34) + 'жатва'.padEnd(14) + (WITH_BASE ? 'базовая линия' : ''));
-for (const [name, ours, base] of rows) {
+for (const [name, ours, base, self] of rows) {
   const mid = (ours / (SEEDS.length * 3)).toFixed(2);
-  console.log(pad(name, 34) + pad(ours + '/' + maxShare + ' (' + mid + ')', 14) + (WITH_BASE ? base + '/' + maxShare : ''));
+  console.log(
+    pad(name + (self ? ' *' : ''), 34) + pad(ours + '/' + maxShare + ' (' + mid + ')', 14) + (WITH_BASE ? base + '/' + maxShare : ''),
+  );
 }
 const matches = packs * 3;
+const clean = cleanPacks * 3;
 console.log(
   '\nсредняя доля за партию: жатва ' +
-    (ourTotal / matches).toFixed(2) +
+    (clean ? (cleanTotal / clean).toFixed(2) : '—') +
     (WITH_BASE ? ', базовая линия ' + (baseTotal / matches).toFixed(2) : '') +
     '   (пакетов ' +
-    packs +
+    cleanPacks +
     ', жеребов ' +
     SEEDS.length +
     ', составов ' +
-    pick.length +
+    rows.filter((r) => !r[3]).length +
     ')',
 );
+if (clean !== matches) {
+  console.log(
+    'со всеми составами было бы ' +
+      (ourTotal / matches).toFixed(2) +
+      ', но состав со звёздочкой в среднюю не идёт: он содержит нашу же грамоту, и её правка',
+  );
+  console.log('делает соперника сильнее — средняя падает, хотя голова не менялась.');
+}
 console.log('самая длинная череда молчания: ' + worstSilence + ' тактов (наказ забирает слот на шестом, 23.2)');
