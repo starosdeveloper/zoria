@@ -530,6 +530,68 @@ test('майданчик ищется в кольцах 3-5 от своей го
   assert.ok(seen.size > 0, 'ни одного майданчика не нашлось');
 });
 
+test('фокус: обе границы — и канал, и выдержка в 40 тактов (13.6, 14.6)', () => {
+  const working = [unit('T-A1', { q: 2, r: -9, task: task({ goal: { q: 2, r: -9 } }) })];
+  const frame = (t) => observe({ t, mine: { units: working } });
+
+  const noRoom = head();
+  assert.equal(noRoom.watchOrder(frame(100), valley, 0), null, 'фокус ушёл при пустом бюджете команд');
+  assert.ok(noRoom.watchOrder(frame(100), valley, 1), 'при одной свободной команде фокуса нет');
+
+  const b = head();
+  assert.ok(b.watchOrder(frame(100), valley, 2), 'первый фокус не поставлен');
+  const far = [unit('T-A1', { q: -8, r: 4, task: task({ goal: { q: -8, r: 4 } }) })];
+  const moved = (t) => observe({ t, mine: { units: far } });
+  assert.equal(b.watchOrder(moved(139), valley, 2), null, 'выдержка 40 тактов не держит: ' + (139 - 100));
+  assert.ok(b.watchOrder(moved(140), valley, 2), 'ровно через 40 тактов фокус не сдвинулся');
+});
+
+test('верфь считает вес рою по обоим классам (10.2)', () => {
+  const three = ['T-A1', 'T-A2', 'T-A3'].map((id) => unit(id));
+  const rich = (units) => observe({ t: 10, pulse: { chanAt: 400, energy: 900 }, mine: { units } });
+
+  /* три Ткача это вес 6: Ткач (2) ещё влезает ровно в 8 */
+  const forTkach = head({ klinoks: 0 });
+  assert.deepEqual(forTkach.yardOrder(rich(three), valley), { kind: 'yard', cls: 'ткач' });
+
+  /* три Ткача и Клинок это 7: Ткач уже не влезает, а второй Клинок — да */
+  const mixed = [...three, unit('K-A1', { cls: 'клинок' })];
+  const forKlinok = head({ klinoks: 2, jamChan: 0 });
+  assert.deepEqual(forKlinok.yardOrder(rich(mixed), valley), { kind: 'yard', cls: 'клинок' });
+
+  const onlyTkach = head({ klinoks: 0 });
+  assert.equal(onlyTkach.yardOrder(rich(mixed), valley), null, 'Ткач влез в вес 9 из 8');
+});
+
+test('мост считает только руины вне нити и не дальше шести сот (7.2)', () => {
+  const b = head();
+  const site = { q: 10, r: -12 };
+  const n = b.bridge(site, valley, oracle);
+  /* та же площадка, но вся долина уже наша: приносить нечего */
+  const owned = head();
+  for (const k of valley.ruins) owned.owner.set(k, 'A');
+  assert.equal(owned.bridge(site, valley, oracle), 0, 'мост посчитал наши же голки');
+  /* и та же площадка при сети, которая до этих руин уже дотянулась */
+  const wide = head([], valley.ruins.slice(0, 24).map((k) => valley.cellOf(k)));
+  assert.ok(wide.bridge(site, valley, oracle) <= n, 'мост посчитал руины, до которых нить и так дошла');
+});
+
+test('пере-зажигание весит больше простого прироста (7.4)', () => {
+  /* Площадка, возвращающая на нить свою погасшую голку, обязана побить
+     площадку с большим приростом покрытия: покрытие погасшей уже оплачено. */
+  const b = head({ buildGate: 0 });
+  const cut = { q: 10, r: -12 };
+  const obs = observe({
+    t: 300,
+    pulse: { energy: 300 },
+    mine: { needles: [{ q: 5, r: -12, dark: false, fed: false, weight: 1 }, { ...cut, dark: true, fed: false, weight: 1 }] },
+  });
+  b.anchors = [SEAT, { q: 5, r: -12 }];
+  const plan = b.sitePlan(obs, valley, oracle, SEAT, NONE, false);
+  assert.ok(plan, 'площадки нет');
+  assert.ok(oracle.linkOk(plan.at, cut), 'выбрана площадка, не возвращающая погасшую голку: ' + plan.key);
+});
+
 test('пере-зажигание требует своих погасших голок, иначе плана нет', () => {
   const b = head({ buildGate: 0 });
   assert.equal(b.relightPlan(observe({ t: 300, pulse: { energy: 300 } }), valley, oracle, SEAT, NONE), null, 'гасших голок нет, а мост строим');

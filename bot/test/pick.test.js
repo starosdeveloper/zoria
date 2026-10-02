@@ -75,6 +75,21 @@ test('кольцо Ключника — цель только после зор�
   assert.ok(after && valley.ringKeys.includes(after.key), 'после зори кольцо не берём');
 });
 
+test('спица кольца после зори тянет так же, как его внешние голки (5.5, 22.4)', () => {
+  /* Кольцо это 12 голок: девять на расстоянии 6 от цитадели и три спицы на 3.
+     В манифесте спица помечена своим прапорцем, и забыть её значит ходить
+     мимо самой доходной цели последних двухсот тактов. */
+  const spokes = [...valley.needles].filter(([, s]) => s.spoke);
+  assert.ok(spokes.length === 3, 'спиц в манифесте не три, а ' + spokes.length);
+  const [k, spec] = spokes[0];
+  const at = { q: spec.q, r: spec.r };
+  const b = head([], []);
+  b.anchors = [at]; // нить дотянута ровно до спицы
+  const plan = b.takePlan(observe({ t: valley.dawnAt + 1 }), valley, oracle, at, NONE);
+  assert.ok(plan, 'после зори спица не выбрана вовсе');
+  assert.equal(plan.key, k, 'выбрана не спица, хотя нить дотянута только до неё: ' + plan.key);
+});
+
 test('дальше reach не ходим', () => {
   const near = head({ reach: 12 }).takePlan(observe({ t: 300 }), valley, oracle, SEAT, NONE);
   assert.ok(near, 'при reach 12 цели нет');
@@ -102,6 +117,22 @@ test('стоянка у кольца: окно перед зорёй, сосед
 
   b.plans.set('T-A9', plan);
   assert.equal(b.stagePlan(obs(valley.dawnAt - 30), valley, oracle, ring, NONE), null, 'вторая машина на ту же стоянку');
+});
+
+test('живлення выбирает голку с незанятой округой (8.5)', () => {
+  /* Живлення сдвигает покрытие на кольцо наружу, поэтому стоит оно столько,
+     сколько вокруг голки сот, которые ещё ничем нашим не накрыты. Голка в
+     гуще своей же сети не даёт почти ничего. */
+  const lone = { q: 12, r: -14 };
+  const crowd = { q: 5, r: -12 };
+  const b = head([], [crowd, { q: 6, r: -11 }, { q: 7, r: -13 }, { q: 4, r: -11 }]);
+  const mine = [
+    { ...lone, dark: false, fed: false, weight: 1 },
+    { ...crowd, dark: false, fed: false, weight: 1 },
+  ];
+  const plan = b.feedPlan(observe({ t: 300, mine: { needles: mine } }), valley, lone, NONE);
+  assert.ok(plan, 'кормить некого');
+  assert.deepEqual(plan.at, lone, 'выбрана голка в гуще сети, а не на краю');
 });
 
 test('живлення: только своя горящая, ненакормленная, в полный вес (8.5)', () => {
