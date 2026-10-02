@@ -6,7 +6,7 @@
   "commandRunner": {
     "command": "node --test --test-isolation=none test/"
   },
-  "mutate": ["dist/valley.js", "dist/belief.js", "dist/harvest.js"],
+  "mutate": ["dist/valley.js", "dist/belief.js", "dist/numbers.js", "dist/harvest.js"],
   "_comment2": "tsconfig.json не попадает в песочницу намеренно: препроцессор Stryker 10 зовёт ts.parseConfigFileTextToJson, которого в TypeScript 7 больше нет, и падает на нём. Команде запуска tsconfig не нужен — тесты исполняют уже собранный dist.",
   "ignorePatterns": ["records/**", "*.ndjson", "tsconfig.json"],
   "reporters": ["clear-text", "progress"],

@@ -110,7 +110,7 @@ npm run spar                   # то же в одном процессе + ба
 npm run tourney                # шесть составов соперников × жеребы, средняя доля
 node crown.js                  # граф сети в конце партии: циклы, обхват, вінець
 npm test                       # хост-тесты: раскладки против констант спецификации
-npm run mutate                 # StrykerJS: мутационный счёт по dist (К4)
+npm run mutate                 # StrykerJS: мутационный счёт по dist (К4), harvest.js 82.0%
 npm run mutate:part 'dist/harvest.js:1-200'   # то же по диапазону строк, если машину жалко
 npm run lint:nakaz             # три ступени линтера приказа
 npx zaria-kit version          # хеш движителя и версии пакетов
