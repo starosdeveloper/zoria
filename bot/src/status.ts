@@ -77,8 +77,11 @@ function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     req.on('data', (c: Buffer) => {
       n += c.length;
       if (n > LIMIT) {
+        /* читати далі нічого, але рвати з'єднання не можна: відмову ще треба
+           віддати. `destroy` тут закривав сокет раніше за відповідь, і стек
+           бачив обрив замість слова `json` - помилку не з чим було зіставити */
+        req.pause();
         bad(new Refusal(400, 'json'));
-        req.destroy();
         return;
       }
       chunks.push(c);
