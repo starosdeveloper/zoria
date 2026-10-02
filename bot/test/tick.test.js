@@ -7,6 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { HarvestBot } from '../dist/harvest.js';
 import { key } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
 import { cfg, head, hexDist, NONE, oracle, SEAT, valley } from './world.js';
@@ -69,6 +70,75 @@ test('слот держится, пока вузол принимает хоть
      обязана продолжать подавать кадры, а не смириться */
   const denied = play(false);
   assert.ok(denied.worst < 6, 'при сплошных отказах голова замолчала на ' + denied.worst + ' тактов');
+});
+
+test('отчёт головы: знаменатель — команды, а не кадры (оценивание 8.5)', () => {
+  /* Эту строку читает человек, а по ней считается метрика К3. Первая её версия
+     делила на `run.stats.orders`, а это кадры — ровно 1200 за партию, по одному
+     на такт; доля отказов выходила втрое меньше настоящей. */
+  const b = head();
+  b.stat.orders = 400;
+  b.stat.nacks = 4;
+  b.stat.silent = 3;
+  b.denyBy.set('11:needle', 3);
+  b.denyBy.set('22:bid', 1);
+  const s = b.report();
+  assert.match(s, /команд 400/);
+  assert.match(s, /відмов 4/);
+  assert.match(s, /1\.00%/, 'доля считается от команд: 4 из 400 это 1.00%, строка: ' + s);
+  assert.match(s, /11:needle×3/, 'причины не названы: ' + s);
+  assert.match(s, /22:bid×1/);
+  assert.match(s, /молчание 3/);
+
+  const clean = head();
+  assert.match(clean.report(), /відмов 0 \(0\.00%\), причини нет/, 'пустой отчёт: ' + clean.report());
+});
+
+test('голова без маніфеста команд не подаёт', () => {
+  const bare = new HarvestBot();
+  assert.deepEqual(bare.think(observe({ t: 1 })), [], 'без init голова что-то подала');
+});
+
+test('отказ по каналу ничему не учит: сота не виновата (13.4)', () => {
+  const b = head();
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: [unit('T-A1')] } }));
+  const i = out.findIndex((o) => o.kind === 'move');
+  assert.ok(i >= 0, 'хода нет: ' + JSON.stringify(out));
+  b.seen([[i, false, 6]]); // канал
+  assert.equal(b.plans.has('T-A1'), true, 'план снят из-за нехватки байтов');
+  assert.equal(b.badGoal.size, 0, 'сота записана негодной из-за нехватки байтов');
+  assert.equal(b.stat.nacks, 1, 'отказ не посчитан');
+  assert.equal(b.denyBy.get('6:move'), 1, 'причина не названа по роду команды');
+});
+
+/** Четыре свободных Ткача: рой полон, верфь молчит, и весь бюджет уходит ходам. */
+const fourIdle = () => ['T-A1', 'T-A2', 'T-A3', 'T-A4'].map((id) => unit(id));
+
+test('бюджет команд: сколько влезает в канал, столько и уходит (13.5, 13.7)', () => {
+  const moves = (chanAt) =>
+    head()
+      .think(observe({ t: 300, pulse: { chanAt, energy: 300 }, mine: { units: fourIdle() } }))
+      .filter((o) => o.kind === 'move').length;
+  /* руки свободные машины не берут (13.6а), поэтому канал весь на команды:
+     при 64 байтах это две по 32, при 63 — одна, при 31 — ни одной */
+  assert.equal(moves(64), 2, 'при двух полных командах ушло не два хода');
+  assert.equal(moves(63), 1, 'байта не хватило на вторую, а ушли обе');
+  assert.equal(moves(31), 0, 'команда ушла при пустом канале');
+  assert.equal(moves(4000), 2, 'ручка cmds перестала держать потолок');
+});
+
+test('в кадре принятое и отказанное вместе: учится и то и другое', () => {
+  const b = head();
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: fourIdle() } }));
+  const moves = out.map((o, i) => [i, o]).filter(([, o]) => o.kind === 'move');
+  assert.equal(moves.length, 2, 'двух ходов нет: ' + JSON.stringify(out));
+  b.seen([
+    [moves[0][0], true, 0],
+    [moves[1][0], false, 11],
+  ]);
+  assert.equal(b.lastOk, b.t, 'принятая команда не сбросила счётчик молчания');
+  assert.equal(b.stat.nacks, 1);
+  assert.equal(b.badGoal.size, 1, 'отказанная цель не отложена');
 });
 
 test('вердикты: принятая команда держит слот, отказ по земле снимает план (12.2)', () => {
