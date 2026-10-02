@@ -7,6 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { encodeVerdicts } from '@zoria/protocol';
 import { HarvestBot } from '../dist/harvest.js';
 import { key } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
@@ -217,6 +218,84 @@ test('бюджет команд: сколько влезает в канал, с
   assert.equal(moves(63), 1, 'байта не хватило на вторую, а ушли обе');
   assert.equal(moves(31), 0, 'команда ушла при пустом канале');
   assert.equal(moves(4000), 2, 'ручка cmds перестала держать потолок');
+});
+
+test('руки машин вычитаются из бюджета команд раньше команд (13.6, 13.7)', () => {
+  /* Прошлая проверка бюджета брала свободные машины, а они рук не берут
+     (13.6а) — то есть слагаемое рук в ней не участвовало вовсе. Здесь две
+     машины в работе (64 байта рук) и две свободные, которым нужен ход. */
+  const mixed = () => [
+    unit('T-A1', { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }),
+    unit('T-A2', { q: 4, r: -9, task: task({ goal: { q: 3, r: -8 }, path: 3 }) }),
+    unit('T-A3'),
+    unit('T-A4'),
+  ];
+  const moves = (chanAt) =>
+    head()
+      .think(observe({ t: 300, pulse: { chanAt, energy: 300 }, mine: { units: mixed() } }))
+      .filter((o) => o.kind === 'move').length;
+  assert.equal(moves(128), 2, 'из 128 байтов руки берут 64, на команды остаётся две');
+  assert.equal(moves(96), 1, 'из 96 после рук остаётся одна команда');
+  assert.equal(moves(64), 0, 'руки съели канал целиком, а команда всё равно ушла');
+});
+
+test('ставка уходит через такт и только при свободном канале (17.3)', () => {
+  const lot = valley.lots()[0];
+  const atTick = lot.at - 1;
+  /* Нить до лота задаётся кадром, а не руками: `think` считает её сам. Своя
+     голка ставится **рядом** с сотой лота, а не на неё: сота лота обязана
+     остаться ничьей, иначе торговаться не за что (17.5). */
+  const neighbour = valley.ruins
+    .map((k) => valley.cellOf(k))
+    .find((at) => !lot.cells.some((c) => c.q === at.q && c.r === at.r) && oracle.linkOk(at, lot.cells[0]));
+  assert.ok(neighbour, 'в этой долине нет своей голки рядом с лотом');
+  const lit = [{ q: neighbour.q, r: neighbour.r, dark: false, fed: false, weight: 1 }];
+  const rich = head();
+  const out = rich.think(observe({ t: atTick, pulse: { chanAt: 400, energy: 300 }, mine: { units: [], needles: lit } }));
+  const bid = out.find((o) => o.kind === 'bid');
+  assert.ok(bid, 'ставка не подана в последний такт окна: ' + JSON.stringify(out));
+  assert.equal(bid.lot, 0);
+  assert.equal(rich.bidden.has(0), true, 'конверт не помечен поданным — уйдёт вторая ставка');
+  const again = rich.think(observe({ t: atTick, pulse: { chanAt: 400, energy: 300 }, mine: { units: [], needles: lit } }));
+  assert.equal(
+    again.some((o) => o.kind === 'bid'),
+    false,
+    'вторая ставка на тот же лот',
+  );
+
+  /* канал расписан руками: ставка не уходит, но конверт остаётся неподанным */
+  const busy = ['T-A1', 'T-A2', 'T-A3', 'T-A4'].map((id) =>
+    unit(id, { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }),
+  );
+  const poor = head();
+  const none = poor.think(observe({ t: atTick, pulse: { chanAt: 141, energy: 300 }, mine: { units: busy, needles: lit } }));
+  assert.equal(
+    none.some((o) => o.kind === 'bid'),
+    false,
+    'ставка ушла при расписанном канале',
+  );
+  assert.equal(poor.bidden.has(0), false, 'конверт сожжён, хотя команда не уходила');
+});
+
+test('вердикты приходят байтами провода, а не массивом (6.6)', () => {
+  const b = head();
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: [unit('T-A1')] } }));
+  const i = out.findIndex((o) => o.kind === 'move');
+  assert.ok(i >= 0);
+  b.feedback(encodeVerdicts([[i, false, 11]]));
+  assert.equal(b.stat.nacks, 1, 'байты вердикта не разобраны');
+  assert.equal(b.badGoal.size, 1, 'из разобранного вердикта ничему не научились');
+});
+
+test('отказ не верфи счётчик корпусов не трогает', () => {
+  const b = head();
+  const out = b.think(observe({ t: 10, pulse: { chanAt: 400, energy: 300 }, mine: { units: [unit('T-A1')] } }));
+  const yard = out.findIndex((o) => o.kind === 'yard');
+  const move = out.findIndex((o) => o.kind === 'move');
+  assert.ok(yard >= 0 && move >= 0, 'нужны и заказ, и ход: ' + JSON.stringify(out));
+  assert.equal(b.pending['ткач'], 1);
+  b.seen([[move, false, 11]]);
+  assert.equal(b.pending['ткач'], 1, 'отказ ходу вернул счётчик корпусов: заказ уйдёт дважды');
 });
 
 test('в кадре принятое и отказанное вместе: учится и то и другое', () => {
