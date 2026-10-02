@@ -141,6 +141,10 @@ export class HarvestBot extends BlankBot {
 
   override init(manifestBytes: Uint8Array, slot: SlotName): void {
     super.init(manifestBytes, slot);
+    /* `BlankBot.init` сам кидает «the manifest did not parse» на нечитаемых
+       байтах, так что сюда с пустым маніфестом не попасть; проверка стоит
+       ради типа, и мутант в ней неубиваем по построению. Проверка на отказ
+       есть — она держит поведение SDK, а не эту строку. */
     const m = this.manifest;
     if (!m) throw new Error('manifest did not decode');
     const v = new Valley(m);

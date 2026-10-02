@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { HarvestBot } from '../dist/harvest.js';
 import { key } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
-import { cfg, head, hexDist, NONE, oracle, SEAT, valley } from './world.js';
+import { cfg, head, hexDist, manifestBytes, NONE, oracle, SEAT, valley } from './world.js';
 
 const busyUnits = (n) =>
   Array.from({ length: n }, (_, i) => unit('T-A' + (i + 1), { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }));
@@ -97,6 +97,98 @@ test('отчёт головы: знаменатель — команды, а н�
 test('голова без маніфеста команд не подаёт', () => {
   const bare = new HarvestBot();
   assert.deepEqual(bare.think(observe({ t: 1 })), [], 'без init голова что-то подала');
+});
+
+test('маніфест, который не разобрался, — отказ, а не тихая партия', () => {
+  /* Кидает сам `BlankBot` («the manifest did not parse»), и это важно знать:
+     наша проверка на пустой маніфест стоит ради типа и недостижима. Провод
+     превращает такой отказ в закрытие кодом 4001 — играть вслепую нельзя. */
+  const bad = new HarvestBot();
+  assert.throws(() => bad.init(new Uint8Array([1, 2, 3]), 'A'), /manifest did not parse/);
+});
+
+test('вершина берётся из кадра и в такте: нить считается от своего вогнища (5.4)', () => {
+  /* Голова получает слот буквой, а вершину узнаёт по своим стартовым голкам.
+     Если такт эту сверку пропустит, нить будет считаться от чужого вогнища —
+     и все цели окажутся «вне нити». */
+  const b = new HarvestBot();
+  b.init(manifestBytes, 'A');
+  b.think(
+    observe({
+      t: 1,
+      pulse: { chanAt: 400, energy: 300 },
+      mine: { needles: [{ q: -11, r: 5, dark: false, fed: false, weight: 1 }], units: [unit('T-C1', { q: -12, r: 6 })] },
+    }),
+  );
+  assert.deepEqual(b.hearth, valley.seat('C'), 'такт не сверил вершину со своими голками');
+  assert.ok(
+    b.anchors.some((a) => a.q === valley.seat('C').q && a.r === valley.seat('C').r),
+    'вогнище вершины C не стало ланкой цепи',
+  );
+});
+
+test('счётчики такта: сколько команд ушло, столько и записано', () => {
+  const b = head();
+  let sent = 0;
+  for (let t = 300; t < 310; t++) {
+    const out = b.think(observe({ t, pulse: { chanAt: 400, energy: 300 }, mine: { units: fourIdle() } }));
+    sent += out.length;
+    if (out.length) b.seen(out.map((_, i) => [i, true, 0]));
+  }
+  assert.equal(b.stat.orders, sent, 'знаменатель доли отказов разошёлся с числом команд');
+  assert.ok(b.stat.sent > 0 && b.stat.sent <= 10, 'тактов с командами ' + b.stat.sent + ' из десяти');
+});
+
+test('череда молчания считается точно, а не «примерно» (23.2)', () => {
+  const b = head({ quiet: 99 }); // удержание слота выключено, считаем чистое молчание
+  const busy = ['T-A1', 'T-A2', 'T-A3', 'T-A4'].map((id) =>
+    unit(id, { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }),
+  );
+  /* счёт идёт от такта входа и на такт консервативен: вердикт такта приходит
+     после его кадра, поэтому «ещё не знаю» считается молчанием, а не тишиной.
+     Недооценить череду опаснее, чем переоценить: на шестой слот уходит */
+  b.think(observe({ t: 600, pulse: { chanAt: 141 }, mine: { units: busy } }));
+  assert.equal(b.stat.silent, 1, 'такт входа: ' + b.stat.silent);
+  b.think(observe({ t: 601, pulse: { chanAt: 141 }, mine: { units: busy } }));
+  assert.equal(b.stat.silent, 2);
+  b.think(observe({ t: 605, pulse: { chanAt: 141 }, mine: { units: busy } }));
+  assert.equal(b.stat.silent, 6, 'череда считается по номерам тактов, а не по числу вызовов');
+});
+
+test('род команды попадает в причину отказа: нужен для разбора (6.6)', () => {
+  const b = head();
+  /* стройка: отказ по земле обязан прийти с родом `needle` */
+  const site = unit('T-A1', { q: 8, r: -10 });
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: [site] } }));
+  const kinds = out.map((o) => o.kind);
+  assert.ok(kinds.length, 'команд нет');
+  b.seen(out.map((_, i) => [i, false, 11]));
+  for (const k of kinds) {
+    if (k === 'halt' || k === 'watch') continue;
+    assert.equal(b.denyBy.get('11:' + k), 1, 'причина без рода команды: ждали 11:' + k);
+  }
+});
+
+test('кадр из одних отказов слот не держит (23.2)', () => {
+  const b = head();
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: fourIdle() } }));
+  assert.ok(out.length, 'команд нет');
+  b.seen(out.map((_, i) => [i, false, 11]));
+  assert.equal(b.lastOk, 0, 'отказанный кадр зачтён как принятая команда');
+});
+
+test('вердикт на кадр и вердикт на команду различаются по числу вердиктов (6.3)', () => {
+  const b = head();
+  const out = b.think(observe({ t: 300, pulse: { chanAt: 400, energy: 300 }, mine: { units: [unit('T-A1'), unit('T-A2'), unit('T-A3'), unit('T-A4')] } }));
+  assert.ok(out.length >= 2, 'нужны минимум две команды');
+  /* два вердикта, первый с кодом сміття — это уже не мусорный кадр, а отказ
+     первой команде: мусорный кадр приходит ровно одним вердиктом */
+  b.seen([
+    [0, false, 1],
+    [1, true, 0],
+  ]);
+  assert.equal(b.stat.garbage, 0, 'два вердикта приняты за мусорный кадр');
+  assert.equal(b.lastOk, b.t, 'принятая вторая команда не зачтена');
 });
 
 test('отказ по каналу ничему не учит: сота не виновата (13.4)', () => {
