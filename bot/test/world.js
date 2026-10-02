@@ -38,10 +38,31 @@ export const NONE = new Set();
 
 export const hexDist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q - b.q + a.r - b.r)) / 2;
 
+/* Образец головы: `init` строит свой `RulesOracle`, а это целый экземпляр
+   движителя — 49 мс на голову, то есть почти весь прогон проверок уходил на
+   сотню одинаковых движителей. Долина и оракул неизменяемы (оракул по своему
+   контракту не проходит ни одного такта, SDK 4), поэтому их можно раздать
+   всем головам из одного образца. Для мутационного прогона это решающее:
+   Stryker гоняет весь набор на каждого мутанта. */
+const PROTO = new HarvestBot(DIALS);
+PROTO.init(manifestBytes, 'A');
+
+function fresh(dials) {
+  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
+  b.manifest = PROTO.manifest;
+  b.slot = PROTO.slot;
+  b.valley = PROTO.valley;
+  b.oracle = PROTO.oracle;
+  b.hearth = PROTO.hearth;
+  b.seatFixed = PROTO.seatFixed;
+  /* память о голках своя у каждой головы: её правят проверки */
+  for (const [k, v] of PROTO.owner) b.owner.set(k, v);
+  return b;
+}
+
 /** Голова на вершине A. `anchors` — её горящая сеть помимо вогнища. */
 export function head(dials, anchors = START) {
-  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
-  b.init(manifestBytes, 'A');
+  const b = fresh(dials);
   if (anchors !== null) b.anchors = [SEAT, ...anchors];
   b.t = 300;
   return b;
@@ -49,7 +70,5 @@ export function head(dials, anchors = START) {
 
 /** Голова без заданной сети: нить считает сама, как в партии. */
 export function bareHead(dials) {
-  const b = new HarvestBot(dials ? { ...DIALS, ...dials } : DIALS);
-  b.init(manifestBytes, 'A');
-  return b;
+  return fresh(dials);
 }

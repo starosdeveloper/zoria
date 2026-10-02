@@ -2,8 +2,9 @@
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "_comment": "Мутационное тестирование (ROADMAP 6.4, К4). Мутируется собранный dist: тесты импортируют именно его, поэтому мутант виден без пересборки — иначе каждый из сотен мутантов стоил бы вызова tsc. Сопоставление с src — по именам и строкам, файлы почти один в один.",
   "testRunner": "command",
+  "_comment4": "--test-isolation=none: все файлы проверок в одном процессе. Набор тогда стоит 3.2 с процессорного времени вместо 15 — Stryker гоняет его на каждого мутанта, и это разница между четырьмя часами и четвертью часа на кусок. В обычном `npm test` изоляция оставлена по умолчанию: его запускают рефери, и там надёжность дороже скорости.",
   "commandRunner": {
-    "command": "node --test test/"
+    "command": "node --test --test-isolation=none test/"
   },
   "mutate": ["dist/valley.js", "dist/belief.js", "dist/harvest.js"],
   "_comment2": "tsconfig.json не попадает в песочницу намеренно: препроцессор Stryker 10 зовёт ts.parseConfigFileTextToJson, которого в TypeScript 7 больше нет, и падает на нём. Команде запуска tsconfig не нужен — тесты исполняют уже собранный dist.",
@@ -13,7 +14,7 @@
     "maxTestsToLog": 0,
     "reportTests": false
   },
-  "timeoutMS": 120000,
+  "timeoutMS": 30000,
   "_comment3": "concurrency 1 намеренно: четыре воркера съедали машину целиком, и редактор закрывался сам. Прогон становится вчетверо дольше, зато идёт в фоне и не отбирает машину — мерить нечем, если мерить нельзя.",
   "concurrency": 1,
   "coverageAnalysis": "off",
