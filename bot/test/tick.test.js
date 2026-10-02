@@ -347,6 +347,72 @@ test('корпус в очереди верфи занимает вес рою, 
   assert.equal(b.pending['ткач'], 0, 'корпус вышел, а счётчик держит');
 });
 
+test('счётчик корпусов отпускается по времени, если событие не пришло (26.4)', () => {
+  /* События помещаются в кадр в рамках бюджета вух (26.4), поэтому своё `build`
+     можно и не увидеть. Счётчик, который не вернулся, навсегда занял бы вес
+     рою, и верфь замолчала бы до конца партии. */
+  const b = head();
+  b.pending['ткач'] = 1;
+  b.yardAt = 300;
+  b.sync(observe({ t: 324 }), valley);
+  assert.equal(b.pending['ткач'], 1, 'отпустили раньше срока: корпус мог ещё выходить');
+  b.sync(observe({ t: 325 }), valley);
+  assert.equal(b.pending['ткач'], 0, 'счётчик не отпущен — верфь замолчит навсегда');
+});
+
+test('чужая верфь наш счётчик не трогает', () => {
+  const b = head();
+  b.pending['ткач'] = 1;
+  b.yardAt = 300;
+  b.sync(observe({ t: 305, events: [{ type: 'build', p: 'B', cls: 'ткач' }] }), valley);
+  assert.equal(b.pending['ткач'], 1, 'машина соперника зачтена как своя');
+  b.sync(observe({ t: 306, events: [{ type: 'build', p: 'A', cls: 'клинок' }] }), valley);
+  assert.equal(b.pending['ткач'], 1, 'вышел Клинок, а списали Ткача');
+  b.sync(observe({ t: 307, events: [{ type: 'build', p: 'A', cls: 'ткач' }] }), valley);
+  assert.equal(b.pending['ткач'], 0);
+});
+
+test('событие лота: нет такого лота или лот никому — владение не меняется (17.5)', () => {
+  const b = head();
+  const lot = valley.lots()[2];
+  const was = lot.cells.map((c) => b.owner.get(key(c.q, c.r)));
+  b.sync(observe({ t: 600, events: [{ type: 'lot', lot: 99, p: 'B' }] }), valley);
+  b.sync(observe({ t: 601, events: [{ type: 'lot', lot: 2, p: null }] }), valley);
+  assert.deepEqual(
+    lot.cells.map((c) => b.owner.get(key(c.q, c.r))),
+    was,
+    'лот никому, а соты записали за кем-то',
+  );
+  b.sync(observe({ t: 602, events: [{ type: 'lot', lot: 2, p: 'B' }] }), valley);
+  assert.deepEqual(
+    lot.cells.map((c) => b.owner.get(key(c.q, c.r))),
+    ['B', 'B'],
+    'победитель лота не записан',
+  );
+});
+
+test('машина в пути команд не получает, а дошедшая получает (10.6)', () => {
+  const b = head();
+  const at = { q: 2, r: -9 };
+  const plan = { kind: 'take', at, key: key(at.q, at.r), since: 0 };
+  /* шлях ещё не пройден — вузол сам доведёт машину, канал тратить незачем */
+  assert.equal(b.planStep(plan, unit('T-A1', { q: 6, r: -12, task: task({ path: 2 }) })), null);
+  /* шлях пройден, задание осталось — команда нужна снова */
+  assert.ok(b.planStep(plan, unit('T-A1', { q: 6, r: -12, task: task({ path: 0 }) })), 'дошедшей машине команды нет');
+  /* и без задания тоже */
+  assert.ok(b.planStep(plan, unit('T-A1', { q: 6, r: -12 })), 'свободной машине команды нет');
+});
+
+test('завада не переподаётся, пока намерение стоит (11.2)', () => {
+  const b = head({ klinoks: 1 });
+  const at = { q: 2, r: -9 };
+  const plan = { kind: 'jam', at, key: key(at.q, at.r), since: 0 };
+  const near = unit('K-A1', { cls: 'клинок', q: 2, r: -8 });
+  assert.equal(b.planStep(plan, near).kind, 'jam', 'первая завада не подана');
+  const holding = unit('K-A1', { cls: 'клинок', q: 2, r: -8, task: task({ jam: at }) });
+  assert.equal(b.planStep(plan, holding), null, 'завада подана второй раз: 64 байта на ровном месте');
+});
+
 test('машины такта: свои и видимые чужие (10.7)', () => {
   const b = head();
   b.sync(

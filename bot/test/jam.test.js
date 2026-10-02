@@ -7,6 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HarvestBot, DIALS } from '../dist/harvest.js';
 import { manifestBytes, observe, unit } from './frames.js';
+import { SEAT, valley } from './world.js';
 
 /* руина в 3 сотах от стартовой голки вершины A — внутри длины нити (5) */
 const FOE = { q: 2, r: -9 };
@@ -64,6 +65,24 @@ test('ничью руину и свою голку не глушат: прави
     mine.some((o) => o.kind === 'jam'),
     false,
     'глушит свою голку',
+  );
+});
+
+test('сота без голки целью завады не бывает', () => {
+  /* Владение в памяти головы живёт по сотам голок, но запись может попасть
+     туда и про соту без голки. Глушить там нечего: команда вернулась бы
+     отказом, а Клинок простоял бы дорогу зря. */
+  const b = head();
+  b.anchors = [SEAT, { q: 5, r: -12 }];
+  b.t = 300;
+  const empty = { q: 3, r: -9 }; // свободная сота рядом с руиной
+  b.owner.set(empty.q + ',' + empty.r, 'B');
+  b.dark.set(empty.q + ',' + empty.r, false);
+  const plan = b.jamPlan(observe({ t: 300 }), valley, SEAT, new Set());
+  assert.equal(
+    plan !== null && plan.at.q === empty.q && plan.at.r === empty.r,
+    false,
+    'цель завады — сота без голки: ' + JSON.stringify(plan),
   );
 });
 
