@@ -137,11 +137,14 @@ test('провод зовёт ту голову, что стоит сейчас,
     report: () => '',
   };
   s.bot.init(manifestBytes, 'C');
+  const before = performance.now();
   assert.deepEqual(s.bot.tick(new Uint8Array(0)), new Uint8Array([1, 2]), 'ответ головы не дошёл до провода');
+  const span = performance.now() - before;
   s.bot.feedback(new Uint8Array(3));
   assert.deepEqual(calls, [['init', 'C'], ['tick'], ['feedback', 3]]);
   assert.equal(s.think.length, 1, 'дума такта не записана');
-  assert.ok(s.think[0] >= 0);
+  /* дума — длительность такта: не больше, чем прошло снаружи вызова */
+  assert.ok(s.think[0] >= 0 && s.think[0] <= span, 'дума ' + s.think[0] + ' мс при такте ' + span + ' мс');
 
   /* у головы без вердиктов провод не падает */
   s.strategy = { ...s.strategy, feedback: undefined };

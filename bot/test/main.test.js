@@ -15,9 +15,14 @@ import { fileURLToPath } from 'node:url';
 
 const MAIN = fileURLToPath(new URL('../dist/main.js', import.meta.url));
 
-/** Окружение без следов вузла: переменные родителя здесь не нужны. */
+/** Окружение без следов вузла: переменные родителя здесь не нужны.
+    Кроме одной: мутационный прогон включает мутанта переменной окружения, и
+    без неё дочерний процесс исполнял исходный код — 106 мутантов провода
+    «выжили», хотя проверки их запускали. */
 function bare(extra) {
   const env = { PATH: process.env.PATH ?? '' };
+  const mutant = process.env.__STRYKER_ACTIVE_MUTANT__;
+  if (mutant !== undefined) env.__STRYKER_ACTIVE_MUTANT__ = mutant;
   return { ...env, ...extra };
 }
 
