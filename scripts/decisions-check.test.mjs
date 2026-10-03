@@ -73,8 +73,21 @@ describe('check', () => {
     expect(run(MAP + '`pick` (`bot/src/a.ts:6–11`), `LIST` (`bot/src/a.ts:1–4`), `B` в `bot/src/b.ts:1`.\n')).toEqual([]);
   });
 
-  it('символ уехал со строки — называется и место объявления', () => {
-    expect(run(MAP + '`pick` (`bot/src/a.ts:5`)\n')).toEqual(['ссылка: `pick` не на bot/src/a.ts:5 — объявлен на 6']);
+  it('символ уехал со строки — называется ближайшее объявление, а не первое упоминание', () => {
+    expect(run(MAP + '`pick` (`bot/src/a.ts:5`)\n')).toEqual(['ссылка: `pick` не на bot/src/a.ts:5 — ближайшее объявление на 6']);
+    /* вызов раньше объявления и два объявления одного имени: берётся ближайшее к старому номеру */
+    /* строка 1 — вызов, 2 — объявление, 8 — поле в наборе, как ручки в DIALS */
+    const two = 'pick(1);\nconst pick = 1;\n\n\n\n\nconst o = {\n  pick: 2,\n};\n';
+    const doc = MAP.replace('| `bot/src/b.ts` | б |', '| `bot/src/b.ts` | б |\n| `bot/src/c.ts` | в |');
+    const files = { ...FILES, 'bot/src/c.ts': two };
+    const runC = (d) =>
+      check(d, (p) => files[p] ?? '', (p) => p in files || Object.keys(files).some((f) => f.startsWith(p)), (d2) =>
+        Object.keys(files)
+          .filter((f) => f.startsWith(d2 + '/') && !f.slice(d2.length + 1).includes('/'))
+          .map((f) => f.slice(d2.length + 1)),
+      );
+    expect(runC(doc + '`pick` (`bot/src/c.ts:7`)\n')).toEqual(['ссылка: `pick` не на bot/src/c.ts:7 — ближайшее объявление на 8']);
+    expect(runC(doc + '`pick` (`bot/src/c.ts:3`)\n')).toEqual(['ссылка: `pick` не на bot/src/c.ts:3 — ближайшее объявление на 2']);
   });
 
   it('конец диапазона не там, где закрывается блок', () => {

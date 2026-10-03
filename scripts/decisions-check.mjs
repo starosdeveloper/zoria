@@ -120,8 +120,18 @@ export function check(doc, read, exists, list) {
     const from = Number(a);
     const word = new RegExp('(^|[^\\w$])' + sym.replace(/\$/g, '\\$') + '($|[^\\w$])');
     if (!word.test(lines[from - 1] ?? '')) {
-      const at = lines.findIndex((l) => word.test(l) && /(function|const|let|class|readonly|private|public|^\s+\w+\s*[(:])/.test(l));
-      errs.push('ссылка: `' + sym + '` не на ' + path + ':' + from + (at >= 0 ? ' — объявлен на ' + (at + 1) : ''));
+      /* подсказка — ближайшее к старому номеру объявление, а не первое упоминание:
+         вызов `pickPlan` стоит раньше его объявления, а у ручки два объявления —
+         поле в типе и значение в наборе */
+      const s = sym.replace(/\$/g, '\\$');
+      const decl = new RegExp(
+        '^\\s*(export\\s+)?((async\\s+)?(function|const|let|class|interface|type)\\s+' + s + '\\b|((private|public|protected|readonly|static|async|override)\\s+)*' + s + '\\??\\s*[(:<=])',
+      );
+      let at = -1;
+      lines.forEach((l, i) => {
+        if (decl.test(l) && (at < 0 || Math.abs(i + 1 - from) < Math.abs(at - from))) at = i + 1;
+      });
+      errs.push('ссылка: `' + sym + '` не на ' + path + ':' + from + (at > 0 ? ' — ближайшее объявление на ' + at : ''));
       continue;
     }
     if (b !== undefined) {
