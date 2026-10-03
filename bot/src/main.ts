@@ -1,7 +1,7 @@
 /* bot :: main
    провід бота: присяга, повтор першого входу, повернення після обриву,
-   перевірка пінів, щоденник віри. Стратегія - у strategy.ts; мережі тут
-   рівно стільки, щоб стратегія про неї не знала.
+   перевірка пінів. Стан голови - у seat.ts, стратегія - у strategy.ts;
+   мережі й оточення тут рівно стільки, щоб решта про них не знала.
 
    Оточення виставляє вузол локального пакета (npm run play) або стек
    (zaria-kit init stack):
@@ -23,16 +23,12 @@
    портом голова лишається жива і відповідає про кінець партії, доки стек
    не згасять: на цій відповіді стоїть /health службового контракту. */
 
-import { appendFileSync, writeFileSync } from 'node:fs';
-import { performance } from 'node:perf_hooks';
 import { ENGINE_HASH } from '@zoria/engine';
-import { beliefLine, connectBot } from '@zoria/sdk';
-import type { BotRun, WireBot } from '@zoria/sdk';
-import { decodeObserve } from '@zoria/protocol';
+import { connectBot } from '@zoria/sdk';
 import { withJitter } from './jitter.js';
-import { createStrategy, HARVEST, presets } from './strategy.js';
-import { Refusal, statusServer } from './status.js';
-import type { Head, HeadStats } from './status.js';
+import { Seat } from './seat.js';
+import { statusServer } from './status.js';
+import { HARVEST } from './strategy.js';
 
 const log = (line: string): void => {
   process.stdout.write(line + '\n');
@@ -43,154 +39,68 @@ const env = process.env;
 const url = env['ZARIA_URL'] ?? '';
 const token = env['ZARIA_TOKEN'] ?? '';
 const engine = env['ZARIA_ENGINE'] || ENGINE_HASH;
-const beliefFile = env['ZARIA_BELIEF'] ?? '';
 const statusPort = Number(env['STATUS_PORT'] ?? '') || 0;
-const freeze = env['ZARIA_FREEZE'] === '1';
 
 /* наш пресет по умолчанию: имя архетипа здесь означало бы, что в зачёт уедет
    заглушка шаблона, а лог при этом выглядел бы как обычная партия */
-let preset = env['ZARIA_PRESET'] || HARVEST;
-let strategy = createStrategy(preset);
+const seat = new Seat({
+  preset: env['ZARIA_PRESET'] || HARVEST,
+  freeze: env['ZARIA_FREEZE'] === '1',
+  engine,
+  beliefFile: env['ZARIA_BELIEF'] ?? '',
+});
 
-/* знімок голови: усе, що про бій знає лише провід. Його читає службовий
-   порт, і з нього control-plane стека збирає /health і /metrics */
-let phase: 'lobby' | 'live' | 'done' = 'lobby';
-let why = '';
-let beliefFrames = 0;
-let beliefAt = 0;
-let tick = 0;
-let frames = 0;
-let run: BotRun | null = null;
-const born = Date.now();
-const IDLE: HeadStats = { ticks: 0, orders: 0, nacks: 0, bytesIn: 0, bytesOut: 0, resyncMs: 0, resumes: 0, faults: 0, deferred: 0, lastTickAt: 0 };
-
-const head: Head = {
-  state: () => ({
-    state: phase,
-    slot: run ? run.slot : null,
-    preset: preset,
-    presets: presets(),
-    freeze: freeze,
-    tick: tick,
-    frames: frames,
-    ticks: run ? run.ack.ticks : 0,
-    why: why,
-    engine: run ? run.ack.engine : engine,
-    uptimeMs: Date.now() - born,
-    stats: run ? { ...run.stats } : { ...IDLE },
-    belief: { frames: beliefFrames, ageMs: beliefAt ? Date.now() - beliefAt : 0 },
-  }),
-  /* зміна стратегії - між партіями і лише до заморожування: зміна пресета
-     посеред бою була б зміною гравця */
-  promote: (value) => {
-    if (typeof value !== 'string' || !presets().includes(value)) throw new Refusal(400, 'preset');
-    if (phase === 'live') throw new Refusal(409, 'live');
-    if (freeze) throw new Refusal(409, 'freeze');
-    preset = value;
-    strategy = createStrategy(preset);
-    return preset;
-  },
-};
-
-const server = statusPort ? statusServer(head) : null;
+const server = statusPort ? statusServer(seat.head) : null;
 if (server) server.listen(statusPort, env['STATUS_HOST'] || '0.0.0.0', () => log('службовий порт ' + statusPort));
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.once(sig, () => {
-    if (run) run.close();
+    if (seat.run) seat.run.close();
     if (server) server.close();
     setTimeout(() => process.exit(0), 500).unref();
   });
 }
 
-/* дума по тактах, мс: стратегія, кодеки і щоденник разом - ваша частка
-   бюджету такту (500 мс від кадру, у них же провід) */
-const think: number[] = [];
-
-const bot: WireBot = {
-  init(manifest, slot) {
-    strategy.init(manifest, slot);
-    if (beliefFile) writeFileSync(beliefFile, '');
-  },
-  tick(observe) {
-    const t0 = performance.now();
-    const out = strategy.tick(observe);
-    /* щоденник пишеться синхронно: процес, що впав, не забирає останні такти */
-    if (beliefFile) {
-      const frame = strategy.belief(decodeObserve(observe));
-      if (frame) {
-        appendFileSync(beliefFile, beliefLine(frame));
-        beliefFrames++;
-        beliefAt = Date.now();
-      }
-    }
-    think.push(performance.now() - t0);
-    return out;
-  },
-  feedback(verdicts) {
-    strategy.feedback?.(verdicts);
-  },
-};
-
 if (!url || !token) {
   /* адреси немає: у локальному пакеті це помилка запуску, а в стеку -
      простій. Службовий порт відповідає про простій чесним 503 */
-  why = 'потрібні ZARIA_URL і ZARIA_TOKEN: бота запускає вузол (npm run play) або стек';
-  log(why);
+  seat.why = 'потрібні ZARIA_URL і ZARIA_TOKEN: бота запускає вузол (npm run play) або стек';
+  log(seat.why);
   if (!server) process.exit(2);
 } else {
   /* перший вхід повторюється з повним джитером: вузол міг ще не відкрити
      лобі. Повернення в бою веде connectBot сам */
   try {
-    run = await withJitter(
+    seat.run = await withJitter(
       { tries: 20, ceilMs: 2000, onRetry: (n, ms, e) => log('вхід ' + n + ' не вдався (' + errText(e) + '), повтор через ' + ms + ' мс') },
       () =>
         connectBot({
           url,
           token,
           agent: env['ZARIA_AGENT'] || 'zaria-bot',
-          bot,
+          bot: seat.bot,
           engine,
-          onTick: (t, n) => {
-            if (t !== null) tick = t;
-            frames = n;
-          },
+          onTick: (t, n) => seat.onTick(t, n),
         }),
     );
   } catch (e) {
     /* піни розійшлися, печатка не та, вузол не відкрив лобі: у партію не входимо */
-    phase = 'done';
-    why = 'у партію не ввійшов: ' + errText(e);
-    log(why);
+    seat.phase = 'done';
+    seat.why = 'у партію не ввійшов: ' + errText(e);
+    log(seat.why);
     if (!server) process.exit(1);
   }
 
+  const run = seat.run;
   if (run) {
-    phase = 'live';
+    seat.phase = 'live';
     log('місце ' + run.slot + ', тактів ' + run.ack.ticks + ', рушій ' + run.ack.engine.slice(0, 12));
-    why = await run.done;
-    phase = 'done';
-    const sorted = [...think].sort((a, b) => a - b);
-    const q = (p: number): string => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length * p) / 100))]!.toFixed(1) : '0');
-    log(
-      'партію закінчено (' +
-        why +
-        '): відповідей ' +
-        run.stats.ticks +
-        ', кидків ' +
-        run.stats.faults +
-        ', повернень ' +
-        run.stats.resumes +
-        '; дума, мс: p50 ' +
-        q(50) +
-        ', p99 ' +
-        q(99) +
-        ', max ' +
-        q(100),
-    );
+    seat.why = await run.done;
+    seat.phase = 'done';
+    log(seat.summary());
     /* окремим рядком - лічильники самої голови: провід рахує кадри, а лестниця
        К3 оцінювання питає про команди (8.5) */
-    const own = strategy.report();
+    const own = seat.strategy.report();
     if (own) log(own);
     if (!server) process.exit(0);
   }
