@@ -127,6 +127,25 @@ test('тело не JSON, не объект или слишком большое
     assert.deepEqual(await bad('null'), [400, { error: 'json' }], 'null принят за объект');
     /* сюда ходит только control-plane: килобайт с запасом, больше — отказ */
     assert.deepEqual(await bad(JSON.stringify({ preset: 'ж'.repeat(2000) })), [400, { error: 'json' }], 'тело больше килобайта принято');
+    /* примитивы JSON разбираются, но объектом не являются */
+    assert.deepEqual(await bad('5'), [400, { error: 'json' }], 'число принято за объект');
+    assert.deepEqual(await bad('"шир"'), [400, { error: 'json' }], 'строка принята за объект');
+    assert.deepEqual(await bad('true'), [400, { error: 'json' }], 'true принят за объект');
+  } finally {
+    await s.close();
+  }
+});
+
+test('тело ровно в килобайт ещё принимается', async () => {
+  const s = await serve(headOf());
+  try {
+    /* {"preset":""} — 13 байт обвязки, остальное латиницей по байту */
+    const body = JSON.stringify({ preset: 'x'.repeat(1024 - 13) });
+    assert.equal(Buffer.byteLength(body), 1024);
+    const res = await fetch(s.url + '/preset', { method: 'POST', body });
+    assert.equal(res.status, 200, 'граница килобайта сдвинута внутрь');
+    const over = await fetch(s.url + '/preset', { method: 'POST', body: body.replace('"x', '"xx') });
+    assert.equal(over.status, 400, '1025 байт приняты');
   } finally {
     await s.close();
   }
