@@ -564,6 +564,46 @@ test('верфь считает вес рою по обоим классам (10
   assert.equal(onlyTkach.yardOrder(rich(mixed), valley), null, 'Ткач влез в вес 9 из 8');
 });
 
+test('верфь: нормы держат и корпуса в очереди, и Клинков сверх нормы не берёт', () => {
+  const rich = (units, chanAt = 400) => observe({ t: 10, pulse: { chanAt, energy: 900 }, mine: { units } });
+  const tk = (n) => Array.from({ length: n }, (_, i) => unit('T-A' + (i + 1)));
+  const kl = unit('K-A1', { cls: 'клинок' });
+
+  /* норма Клинков набрана, место в рое есть (вес 7 из 8): заказа нет */
+  assert.equal(head({ tkachi: 3, klinoks: 1 }).yardOrder(rich([...tk(3), kl]), valley), null, 'Клинок сверх нормы');
+
+  /* Ткач в очереди считается в норму: два на поле и один корпус — это три */
+  const queued = head({ tkachi: 3, klinoks: 1 });
+  queued.pending['ткач'] = 1;
+  assert.deepEqual(queued.yardOrder(rich(tk(2)), valley), { kind: 'yard', cls: 'клинок' }, 'корпус в очереди не засчитан в норму Ткачей');
+
+  /* Клинок в очереди считается в норму Клинков */
+  const kQueued = head({ tkachi: 3, klinoks: 1 });
+  kQueued.pending['клинок'] = 1;
+  assert.equal(kQueued.yardOrder(rich(tk(3)), valley), null, 'корпус Клинка в очереди не засчитан в норму');
+
+  /* и в вес рою: три Ткача, Клинок и Клинок в очереди — 8 из 8, четвёртому Ткачу места нет */
+  const full = head({ tkachi: 4, klinoks: 2, jamChan: 0 });
+  full.pending['клинок'] = 1;
+  assert.equal(full.yardOrder(rich([...tk(3), kl]), valley), null, 'корпус в очереди не занял вес рою (10.3)');
+  /* то же для Ткача: три на поле и один в очереди — 8 из 8, Клинку места нет */
+  const fullT = head({ tkachi: 4, klinoks: 1, jamChan: 0 });
+  fullT.pending['ткач'] = 1;
+  assert.equal(fullT.yardOrder(rich(tk(3)), valley), null, 'корпус Ткача в очереди не занял вес рою');
+
+  /* заказ считается: счётчик верфи идёт в строку плана спарринга */
+  const counted = head({ tkachi: 3, klinoks: 1 });
+  counted.yardOrder(rich(tk(2)), valley);
+  assert.equal(counted.stat.yard, 1);
+
+  /* порог канала для завады — включительно */
+  const edge = head({ tkachi: 3, klinoks: 1, guard: 0, jamChan: 220 });
+  assert.deepEqual(edge.yardOrder(rich(tk(3), 220), valley), { kind: 'yard', cls: 'клинок' }, 'канал ровно на пороге');
+  assert.equal(head({ tkachi: 3, klinoks: 1, guard: 0, jamChan: 220 }).yardOrder(rich(tk(3), 219), valley), null, 'канал ниже порога');
+  /* сторожу порог канала не нужен: он платит только руки и только в погоне */
+  assert.deepEqual(head({ tkachi: 3, klinoks: 1, guard: 1, jamChan: 220 }).yardOrder(rich(tk(3), 100), valley), { kind: 'yard', cls: 'клинок' });
+});
+
 test('мост считает только руины вне нити и не дальше шести сот (7.2)', () => {
   const b = head();
   const site = { q: 10, r: -12 };
