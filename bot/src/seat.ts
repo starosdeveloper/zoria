@@ -28,6 +28,19 @@ export interface SeatOptions {
   engine: string;
   /* файл щоденника віри (NDJSON); порожньо - не писати */
   beliefFile: string;
+  /* куди писати про кидки; без нього - нікуди */
+  log?: (line: string) => void;
+}
+
+/* скільки рядків про кидки за партію: голова, що кидає щотакту, інакше
+   заллє лог 1200 однаковими рядками і сховає все інше */
+export const FAULT_LINES = 20;
+
+const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/* лише ті події процесу, які тут слухаються: перевіркам вистачає EventEmitter */
+export interface ProcessEvents {
+  on(event: 'unhandledRejection' | 'uncaughtException', fn: (e: unknown) => void): unknown;
 }
 
 /* перцентиль уже відсортованого ряду: найближчий ранг, без інтерполяції -
@@ -51,6 +64,9 @@ export class Seat {
   /* дума по тактах, мс: стратегія, кодеки і щоденник разом - ваша частка
      бюджету такту (500 мс від кадру, у них же провід) */
   readonly think: number[] = [];
+  /* кидки за партію: місце і повідомлення -> скільки разів */
+  readonly faults = new Map<string, number>();
+  private faultLines = 0;
   private readonly opt: SeatOptions;
   private readonly born: number;
 
@@ -104,7 +120,7 @@ export class Seat {
     },
     tick: (observe) => {
       const t0 = performance.now();
-      const out = this.strategy.tick(observe);
+      const out = this.guarded('tick', () => this.strategy.tick(observe));
       /* щоденник пишеться синхронно: процес, що впав, не забирає останні такти */
       if (this.opt.beliefFile) {
         const frame = this.strategy.belief(decodeObserve(observe));
@@ -118,9 +134,41 @@ export class Seat {
       return out;
     },
     feedback: (verdicts) => {
-      this.strategy.feedback?.(verdicts);
+      this.guarded('feedback', () => this.strategy.feedback?.(verdicts));
     },
   };
+
+  /* кидок голови SDK ловить сам і рахує в stats.faults, але мовчки: що саме
+     кинуло, не видно ніде. Тут кидок записується і летить далі - ціну такту
+     (тиша на цей такт) і лічильник лишаємо проводу */
+  private guarded<T>(where: string, fn: () => T): T {
+    try {
+      return fn();
+    } catch (e) {
+      this.noted(where, e);
+      throw e;
+    }
+  }
+
+  /* кожне різне повідомлення - один рядок, і не більше FAULT_LINES за партію;
+     повтори лише рахуються */
+  noted(where: string, e: unknown): void {
+    const key = where + ': ' + errText(e);
+    const n = (this.faults.get(key) ?? 0) + 1;
+    this.faults.set(key, n);
+    if (n > 1 || this.faultLines >= FAULT_LINES) return;
+    this.faultLines++;
+    this.opt.log?.('кидок ' + key + (this.faultLines === FAULT_LINES ? ' (далі кидки лише рахуються)' : ''));
+  }
+
+  /* неперехоплене в процесі не має його вбивати: мертвий процес віддає слот
+     грамоті до кінця партії (на провокаторі 3 - 1239 тактів із 3600), а живий
+     хоча б відповідає. Обробник замінює типовий вихід Node - тому без запису
+     це було б саме те мовчання, від якого він захищає */
+  watch(proc: ProcessEvents): void {
+    proc.on('unhandledRejection', (e) => this.noted('процес', e));
+    proc.on('uncaughtException', (e) => this.noted('процес', e));
+  }
 
   /* такт світу з заголовка кадру; null - кадр без заголовка, такт лишається */
   onTick(t: number | null, n: number): void {

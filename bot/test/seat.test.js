@@ -13,7 +13,8 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeObserve } from '@zoria/protocol';
-import { IDLE, quantile, Seat } from '../dist/seat.js';
+import { EventEmitter } from 'node:events';
+import { FAULT_LINES, IDLE, quantile, Seat } from '../dist/seat.js';
 import { Refusal } from '../dist/status.js';
 import { HARVEST, presets } from '../dist/strategy.js';
 import { manifestBytes, observe } from './frames.js';
@@ -218,4 +219,60 @@ test('строка конца партии: счётчики провода и �
   idle.why = 'close:4001';
   assert.equal(idle.summary(), 'партію закінчено (close:4001): відповідей 0, кидків 0, повернень 0; дума, мс: p50 0, p99 0, max 0');
   assert.deepEqual(idle.think, [], 'строка итога не должна трогать ряд думы');
+});
+
+/** Голова, которая кидает на каждом такте и на каждом вердикте. */
+const throwing = (msg) => ({
+  init() {},
+  tick: () => {
+    throw new Error(msg);
+  },
+  feedback: () => {
+    throw new Error('вердикт ' + msg);
+  },
+  belief: () => null,
+  report: () => '',
+});
+
+test('кидок головы записан и летит дальше: цену такта и счётчик держит провод', () => {
+  const lines = [];
+  const s = new Seat({ ...OPT, log: (l) => lines.push(l) });
+  s.strategy = throwing('нет соты');
+  assert.throws(() => s.bot.tick(new Uint8Array(0)), /нет соты/, 'кидок проглочен: SDK не посчитает его в faults');
+  assert.throws(() => s.bot.feedback(new Uint8Array(0)), /вердикт нет соты/);
+  assert.deepEqual(lines, ['кидок tick: нет соты', 'кидок feedback: вердикт нет соты']);
+  assert.equal(s.think.length, 0, 'брошенный такт не дума');
+});
+
+test('повтор того же кидка только считается, а лог — не больше FAULT_LINES строк', () => {
+  const lines = [];
+  const s = new Seat({ ...OPT, log: (l) => lines.push(l) });
+  s.strategy = throwing('та же');
+  for (let i = 0; i < 1200; i++) assert.throws(() => s.bot.tick(new Uint8Array(0)));
+  assert.deepEqual(lines, ['кидок tick: та же'], '1200 одинаковых кидков дали ' + lines.length + ' строк');
+  assert.equal(s.faults.get('tick: та же'), 1200);
+
+  assert.equal(FAULT_LINES, 20);
+  for (let i = 0; i < 50; i++) s.noted('tick', new Error('разный ' + i));
+  assert.equal(lines.length, 20, 'разных кидков в логе больше потолка');
+  assert.equal(lines[19], 'кидок tick: разный 18 (далі кидки лише рахуються)', 'последняя строка должна сказать, что дальше тишина не значит «всё хорошо»');
+  assert.equal(s.faults.size, 51, 'сверх потолка кидки перестали считаться');
+});
+
+test('без лога кидки всё равно считаются', () => {
+  const s = new Seat(OPT);
+  s.noted('процес', 'не Error вовсе');
+  assert.equal(s.faults.get('процес: не Error вовсе'), 1);
+});
+
+test('неперехваченное в процессе записывается и процесс не роняет', () => {
+  const lines = [];
+  const s = new Seat({ ...OPT, log: (l) => lines.push(l) });
+  const proc = new EventEmitter();
+  s.watch(proc);
+  proc.emit('unhandledRejection', new Error('обещание без catch'));
+  proc.emit('uncaughtException', new Error('кидок из таймера'));
+  assert.deepEqual(lines, ['кидок процес: обещание без catch', 'кидок процес: кидок из таймера']);
+  assert.equal(proc.listenerCount('uncaughtException'), 1);
+  assert.equal(proc.listenerCount('unhandledRejection'), 1);
 });

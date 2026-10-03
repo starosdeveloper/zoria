@@ -115,3 +115,19 @@ test('без своих переменных голова садится «жа�
   }
   assert.equal(await p.exit, 0);
 });
+
+test('занятый служебный порт без адреса вузла — ошибка запуска с причиной, а не тихий ноль', async () => {
+  /* без своего обработчика error процесс гас с кодом 0: служебный порт не
+     поднялся, держать процесс нечем, и выход выглядел как успех */
+  const busy = createServer();
+  await new Promise((ok) => busy.listen(0, '127.0.0.1', ok));
+  const { port } = busy.address();
+  try {
+    const p = launch(bare({ STATUS_PORT: String(port), STATUS_HOST: '127.0.0.1' }));
+    assert.equal(await p.exit, 3, 'код выхода:\n' + p.out());
+    assert.match(p.out(), new RegExp('службовий порт ' + port + ' не відкрився: .*EADDRINUSE'));
+    assert.doesNotMatch(p.out(), /кидок процес/, 'отказ порта ушёл мимо своего обработчика');
+  } finally {
+    await new Promise((ok) => busy.close(ok));
+  }
+});

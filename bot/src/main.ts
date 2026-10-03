@@ -48,10 +48,22 @@ const seat = new Seat({
   freeze: env['ZARIA_FREEZE'] === '1',
   engine,
   beliefFile: env['ZARIA_BELIEF'] ?? '',
+  log,
 });
+seat.watch(process);
 
 const server = statusPort ? statusServer(seat.head) : null;
-if (server) server.listen(statusPort, env['STATUS_HOST'] || '0.0.0.0', () => log('службовий порт ' + statusPort));
+if (server) {
+  /* порт не відкрився (зайнятий, заборонений). Без адреси вузла процесу лишалося
+     тільки відповідати на порту - тож це помилка запуску, і вихід не може бути
+     нулем: без цього обробника процес тихо згасав з 0, бо тримати його було
+     нічим. З адресою партія важливіша за порт: грати далі, причину - в лог */
+  server.on('error', (e) => {
+    log('службовий порт ' + statusPort + ' не відкрився: ' + errText(e));
+    if (!url || !token) process.exit(3);
+  });
+  server.listen(statusPort, env['STATUS_HOST'] || '0.0.0.0', () => log('службовий порт ' + statusPort));
+}
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.once(sig, () => {
