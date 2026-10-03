@@ -21,6 +21,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm cycles # циклы импорта, K5
       - run: pnpm clones # структурные клоны, K5
+      - run: pnpm decisions # карта и ссылки DECISIONS.md против кода, Р1/Р2
       - run: pnpm test
       - run: node apps/watcher/src/main.ts selftest
       - run: pnpm build

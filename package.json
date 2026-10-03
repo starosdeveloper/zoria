@@ -20,7 +20,8 @@
     "lint": "eslint .",
     "cycles": "madge --circular --extensions ts,tsx packages/core/src apps/watcher/src apps/client/src bot/src scripts",
     "clones": "jscpd --min-lines 12 --min-tokens 70 --threshold 1 --reporters console --format typescript,javascript --ignore \"**/node_modules/**,**/dist/**,**/.stryker-tmp/**,**/reports/**\" packages apps bot scripts",
-    "check": "pnpm typecheck && pnpm lint && pnpm cycles && pnpm clones && pnpm test"
+    "decisions": "node scripts/decisions-check.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm cycles && pnpm clones && pnpm decisions && pnpm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
