@@ -7,7 +7,7 @@
    Запуск: npm run spar [-- сеяние сеяние ...]  */
 
 import { createEngine } from '@zoria/engine';
-import { decodeObserve } from '@zoria/protocol';
+import { decodeManifest, decodeObserve } from '@zoria/protocol';
 import { ARCHETYPES, runPack, sampleBot } from '@zoria/sdk';
 import { DIALS, HarvestBot } from './dist/harvest.js';
 
@@ -36,8 +36,18 @@ const pack = (seed, seat) => runPack(createEngine, { seed, ticks: TICKS, cast: [
 const TIME = Boolean(process.env.SPAR_TIME);
 const MARKS = [300, 600, 900];
 const clocks = [];
+const hexDist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q - b.q + a.r - b.r)) / 2;
 const tally = (c, o) => {
   const needleAt = new Map(o.own.map((n) => [n.q + ',' + n.r, n.owner]));
+  /* агрессор по 21.6 (приближённо): наш Ткач до зори внутри межи стоит на
+     голке, которая не наша, — значит, её можно греть */
+  if (c.citadel && o.t < c.dawnAt) {
+    for (const u of o.mine.units) {
+      if (u.cls !== 'ткач' || hexDist(u, c.citadel) > c.cherta) continue;
+      const here = needleAt.get(u.q + ',' + u.r);
+      if (here !== undefined && here !== c.slot) c.aggro.set(u.id, o.t);
+    }
+  }
   for (const u of o.mine.units) {
     if (u.cls !== 'ткач') {
       c.klinok++;
@@ -70,6 +80,13 @@ const tally = (c, o) => {
       const was = c.prev.get(e.q + ',' + e.r) ?? 'не видно';
       const k = e.p + ':' + was;
       c.rammed.set(k, (c.rammed.get(k) ?? 0) + 1);
+      /* Ключник таранит только агрессора, а погоня держится 12 тактов после
+         (21.8): был ли наш Ткач агрессором недавно — окно 12 плюс подход */
+      if (e.p === 'K') {
+        const id = c.prevId.get(e.q + ',' + e.r);
+        const at = id === undefined ? undefined : c.aggro.get(id);
+        c.keeper[at !== undefined && o.t - at <= 24 ? 0 : 1]++;
+      }
     }
   }
   /* осада: чужой Ткач стоит на нашей голке у нас на виду — греет её (9.2) */
@@ -83,6 +100,7 @@ const tally = (c, o) => {
     if (!c.sieges.has(k)) c.siegeStarts++;
   }
   c.sieges = sieged;
+  c.prevId = new Map(o.mine.units.map((u) => [u.q + ',' + u.r, u.id]));
   c.prev = new Map(
     o.mine.units.map((u) => {
       const t = u.task;
@@ -118,6 +136,12 @@ const clocked = (make) => () => {
     rammed: new Map(),
     prev: new Map(),
     sieges: new Set(),
+    prevId: new Map(),
+    aggro: new Map(),
+    keeper: [0, 0],
+    citadel: null,
+    cherta: 0,
+    dawnAt: 0,
     siegeTicks: 0,
     siegeStarts: 0,
   };
@@ -125,6 +149,12 @@ const clocked = (make) => () => {
   return {
     init: (m, slot) => {
       c.slot = slot;
+      const man = decodeManifest(m);
+      if (man) {
+        c.citadel = man.citadel;
+        c.cherta = man.cherta;
+        c.dawnAt = man.dawn.at;
+      }
       inner.init(m, slot);
     },
     tick: (bytes) => {
@@ -154,6 +184,7 @@ const showClocks = (list) => {
     const rams = [...c.rammed].sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ' ' + n).join(', ') || 'нема';
     console.log('        тарани по нас (хто:що робила машина): ' + rams);
     console.log('        облоги наших голок на виду: ' + c.siegeStarts + ' (чужих ткач-тактів на наших голках ' + c.siegeTicks + ')');
+    console.log('        тарани Ключника: після нашої агресії ' + c.keeper[0] + ', без неї ' + c.keeper[1]);
   }
 };
 
