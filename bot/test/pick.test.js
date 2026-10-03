@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { key } from '../dist/valley.js';
-import { DIALS, HarvestBot } from '../dist/harvest.js';
+import { DIALS, HarvestBot, midStep } from '../dist/harvest.js';
 import { observe, task, unit, manifestBytes } from './frames.js';
 import { cfg, head, hexDist, NONE, oracle, RUIN, SEAT, valley } from './world.js';
 
@@ -268,6 +268,20 @@ test('план машины не выдаётся посреди шага и н�
   const first = b.unitOrder(free, observe({ t: 300 }), valley, oracle);
   assert.ok(first, 'свободной машине плана не дали');
   assert.equal(b.plans.size, 1, 'план не запомнен');
+});
+
+test('стоящая машина с застарелым wait — не посреди шага: план ей дают (10.6)', () => {
+  /* Вузол обнуляет wait только на следующем шаге. Ткач, дошедший до руины и
+     взявший её, стоит без задания с wait от последнего шага — и по одному wait
+     его считали шагающим: 4355 из 4664 Ткач-тактов простоя за три пакета. */
+  assert.equal(midStep(unit('T-A1', { wait: 9 })), false, 'нет пути — нет шага');
+  assert.equal(midStep(unit('T-A1', { wait: 9, task: task({ path: 0 }) })), false, 'путь пуст — нет шага');
+  assert.equal(midStep(unit('T-A1', { wait: 0, task: task({ path: 3 }) })), false, 'в центре соты — можно');
+  assert.equal(midStep(unit('T-A1', { wait: 1, task: task({ path: 3 }) })), true, 'шаг начат');
+
+  const b = head();
+  const standing = unit('T-A1', { wait: 9 });
+  assert.ok(b.unitOrder(standing, observe({ t: 300 }), valley, oracle), 'стоящему Ткачу плана не дали');
 });
 
 test('Клинок глушит ближнюю чужую горящую голку у своей сети (8.7, 10.8)', () => {

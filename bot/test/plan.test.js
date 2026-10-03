@@ -257,9 +257,15 @@ test('удержание слота: halt простаивающей машин�
   assert.equal(b.keepAlive(observe({ t: 102, mine: { units: [idle] } }), valley), null, 'молчания ещё нет');
   assert.deepEqual(b.keepAlive(observe({ t: 103, mine: { units: [idle] } }), valley), { kind: 'halt', unit: 'T-A1' });
   assert.equal(
-    b.keepAlive(observe({ t: 103, mine: { units: [unit('T-A1', { wait: 2 })] } }), valley).kind,
+    b.keepAlive(observe({ t: 103, mine: { units: [unit('T-A1', { wait: 2, task: task({ path: 2 }) })] } }), valley).kind,
     'watch',
     'машине посреди шага halt не подать (10.6)',
+  );
+  /* дошла и стоит: путь пуст, а `wait` вузол оставил от последнего шага — это не шаг */
+  assert.deepEqual(
+    b.keepAlive(observe({ t: 103, mine: { units: [unit('T-A1', { wait: 9 })] } }), valley),
+    { kind: 'halt', unit: 'T-A1' },
+    'стоящую машину с застарелым wait приняли за шагающую',
   );
   assert.equal(b.keepAlive(observe({ t: 103, mine: { units: [busy] } }), valley).kind, 'watch');
   assert.equal(

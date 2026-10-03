@@ -18,7 +18,7 @@
      only when a machine's state actually changed.
    - the turn refusal. Any command to a machine that has begun a step comes back
      `поворот` (10.6), and a frame whose every command is refused is a silent
-     tick (23.2). So a machine is only ever commanded with `wait = 0`.
+     tick (23.2). So a machine is never commanded mid-step (`midStep`).
    - the Keeper. Heating or building inside his border provokes a ram (21.6),
      but walking and standing there do not (21.7). Nothing inside the border is
      targeted before dawn; the staging cell is next to the ring, never on it. */
@@ -91,6 +91,15 @@ export const DIALS: HarvestDials = {
   klinoks: 0,
   jamChan: 220,
 };
+
+/** Has the machine begun a step? Rule 10.6 names both halves: a non-empty path
+    and `wait` above zero. `wait` alone is not it: the node keeps the last step's
+    count on a machine that walked to its cell and stopped, so a Tkach that took a
+    ruin stands on it with no task and `wait` still set. Reading `wait` alone left
+    such a Tkach unplanned - 4355 of 4664 idle Tkach-ticks over three packs. */
+export function midStep(u: MineUnit): boolean {
+  return u.wait > 0 && u.task !== null && u.task.path > 0;
+}
 
 export class HarvestBot extends BlankBot {
   private valley: Valley | null = null;
@@ -424,7 +433,7 @@ export class HarvestBot extends BlankBot {
   private unitOrder(u: MineUnit, obs: Observe, v: Valley, o: RulesOracle): Order | null {
     /* Mid-step machines answer `поворот` to everything (10.6), and a frame of
        refusals is a silent tick. Nothing is said to them. */
-    if (u.wait > 0) return null;
+    if (midStep(u)) return null;
 
     const plan = this.plans.get(u.id);
     if (plan) {
@@ -894,7 +903,7 @@ export class HarvestBot extends BlankBot {
   private keepAlive(obs: Observe, v: Valley): Order | null {
     if (obs.t - this.lastOk < this.dials.quiet) return null;
     this.stat.quiet++;
-    const idle = obs.mine.units.find((u) => u.task === null && u.wait === 0);
+    const idle = obs.mine.units.find((u) => u.task === null && !midStep(u));
     if (idle) return { kind: 'halt', unit: idle.id };
     const at = this.focus ?? this.hearth;
     if (obs.pulse.chanAt < v.num.chanOrder) return null;

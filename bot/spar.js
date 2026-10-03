@@ -7,6 +7,7 @@
    Запуск: npm run spar [-- сеяние сеяние ...]  */
 
 import { createEngine } from '@zoria/engine';
+import { decodeObserve } from '@zoria/protocol';
 import { ARCHETYPES, runPack, sampleBot } from '@zoria/sdk';
 import { DIALS, HarvestBot } from './dist/harvest.js';
 
@@ -27,14 +28,76 @@ const rivals = () =>
 
 const pack = (seed, seat) => runPack(createEngine, { seed, ticks: TICKS, cast: [seat, ...rivals()] });
 
+/* SPAR_TIME=1: куда уходят машино-такты Ткачей на нашем месте — у любой головы,
+   своей или зеркала, по её же кадрам наблюдения. Голова зеркала изнутри не
+   видна, а кадр у всех один, поэтому сравнение «жатвы» с «рівним» честное.
+   Ткач без задания на чужой или ничьей голке греет её (13.6) — это работа,
+   а не простой. */
+const TIME = Boolean(process.env.SPAR_TIME);
+const MARKS = [300, 600, 900];
+const clocks = [];
+const tally = (c, o) => {
+  const needleAt = new Map(o.own.map((n) => [n.q + ',' + n.r, n.owner]));
+  for (const u of o.mine.units) {
+    if (u.cls !== 'ткач') {
+      c.klinok++;
+      continue;
+    }
+    c.tkach++;
+    const t = u.task;
+    const here = needleAt.get(u.q + ',' + u.r);
+    if (!t) {
+      if (here !== undefined && here !== c.slot) c.heat++;
+      else c.idle++;
+    } else if (t.path > 0) c.walk++;
+    else if (t.site) c.build++;
+    else if (t.feed) c.feed++;
+    else if (here !== undefined && here !== c.slot) c.heat++;
+    else c.other++;
+  }
+  const lit = o.mine.needles.filter((n) => !n.dark).length;
+  const at = o.t + ':' + o.mine.needles.length + '/' + lit + ' з' + Math.round(o.pulse.energy);
+  if (MARKS.includes(o.t)) c.curve.push(at);
+  c.last = at;
+};
+const clocked = (make) => () => {
+  const inner = make();
+  const c = { slot: '', tkach: 0, idle: 0, walk: 0, build: 0, heat: 0, feed: 0, other: 0, klinok: 0, curve: [], last: '' };
+  clocks.push(c);
+  return {
+    init: (m, slot) => {
+      c.slot = slot;
+      inner.init(m, slot);
+    },
+    tick: (bytes) => {
+      const o = decodeObserve(bytes);
+      if (o) tally(c, o);
+      return inner.tick(bytes);
+    },
+    feedback: (v) => inner.feedback?.(v),
+  };
+};
+const timed = (make) => (TIME ? clocked(make) : make);
+const pct = (n, of) => (of ? ((100 * n) / of).toFixed(0) + '%' : '-');
+const showClocks = (list) => {
+  if (!TIME) return;
+  for (const [i, c] of list.entries()) {
+    console.log(
+      '      ткачі ' + (i + 1) + ': простій ' + pct(c.idle, c.tkach) + ', дорога ' + pct(c.walk, c.tkach) + ', будова ' + pct(c.build, c.tkach) +
+        ', гріє ' + pct(c.heat, c.tkach) + ', живить ' + pct(c.feed, c.tkach) + ', інше ' + pct(c.other, c.tkach) +
+        ' (ткач-тактів ' + c.tkach + ', клинок-тактів ' + c.klinok + ')   голок/горить/заряд: ' + [...c.curve, c.last].join('  '),
+    );
+  }
+};
+
 /* планы наших четырёх Ткачей за пакет: куда ушло рабочее время головы */
 const heads = [];
 const ourSeat = () => ({
-  bot: () => {
+  bot: timed(() => {
     const b = new HarvestBot(dials);
     heads.push(b);
     return b;
-  },
+  }),
 });
 
 const SEATS = ['A', 'B', 'C'];
@@ -79,11 +142,14 @@ let base = 0;
 for (const seed of SEEDS) {
   heads.length = 0;
   const a = pack(seed, ourSeat());
-  const b = pack(seed, { bot: () => sampleBot(createEngine, 'рівний') });
+  const clocksA = clocks.splice(0);
+  const b = pack(seed, { bot: timed(() => sampleBot(createEngine, 'рівний')) });
+  const clocksB = clocks.splice(0);
   ours += a.shares[0];
   base += b.shares[0];
   console.log('жереб ' + seed + ':');
   row('жатва', seed, a);
+  showClocks(clocksA);
   if (process.env.SPAR_WHY) {
     const WORD = ['', 'сміття', 'стеля', 'машина', 'поворот', 'тариф', 'канал', 'вуха', 'верф', 'заряд', 'вага рою', 'земля', 'немає шляху', 'не своя голка', 'спалах', 'погляд', 'таран', 'ціль', 'глушіння', 'угода', 'клич', 'відмова', 'торги'];
     heads.forEach((h, i) => {
@@ -95,6 +161,7 @@ for (const seed of SEEDS) {
     });
   }
   row('рівний', seed, b);
+  showClocks(clocksB);
 }
 const changed = Object.entries(dials).filter(([k, v]) => DIALS[k] !== v);
 console.log(
