@@ -17,7 +17,13 @@ const seeds = process.argv.slice(2).map(Number).filter(Number.isFinite);
 const SEEDS = seeds.length ? seeds : [2026, 7, 31337];
 const TICKS = Number(process.env.SPAR_TICKS || 1200);
 
-const rivals = () => [{ bot: () => sampleBot(createEngine, 'обхідник') }, { style: { ...ARCHETYPES['рівний'] } }];
+/* соперники по умолчанию — как у локального пакета; SPAR_RIVALS='проривник,рівний'
+   ставит зеркала архетипов, чтобы разобрать один состав турнира с SPAR_WHY */
+const RIVALS = (process.env.SPAR_RIVALS || '').split(',').filter(Boolean);
+const rivals = () =>
+  RIVALS.length
+    ? RIVALS.map((name) => ({ bot: () => sampleBot(createEngine, name) }))
+    : [{ bot: () => sampleBot(createEngine, 'обхідник') }, { style: { ...ARCHETYPES['рівний'] } }];
 
 const pack = (seed, seat) => runPack(createEngine, { seed, ticks: TICKS, cast: [seat, ...rivals()] });
 
