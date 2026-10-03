@@ -65,7 +65,7 @@ test('живлення — последнее: когда брать и стро
 });
 
 test('Клинку планы Ткача не выдаются, и наоборот (10.1)', () => {
-  const b = head({ klinoks: 1 });
+  const b = head({ klinoks: 1, guard: 0 });
   b.owner.set(key(RUIN.q, RUIN.r), 'B');
   b.dark.set(key(RUIN.q, RUIN.r), false);
   const klinok = b.pickPlan(unit('K-A1', { cls: 'клинок' }), observe({ t: 300 }), valley, oracle);

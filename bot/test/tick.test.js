@@ -334,7 +334,7 @@ test('корпус в очереди верфи занимает вес рою, 
   /* Именно на этом погорел образец грамоты SDK: `build_drone` считает машины
      на поле, корпус в очереди в кадр не приходит, и он двадцать один раз
      заказывал машину в полный рой, получая `вага рою`. */
-  const b = head();
+  const b = head({ tkachi: 4, klinoks: 0 });
   const at = (energy) => observe({ t: 10, pulse: { chanAt: 400, energy }, mine: { units: [unit('T-A1'), unit('T-A2'), unit('T-A3')] } });
   assert.deepEqual(b.yardOrder(at(900), valley), { kind: 'yard', cls: 'ткач' }, 'три машины, место есть — заказа нет');
   assert.equal(b.pending['ткач'], 1);
@@ -551,15 +551,16 @@ test('верфь считает вес рою по обоим классам (10
   const rich = (units) => observe({ t: 10, pulse: { chanAt: 400, energy: 900 }, mine: { units } });
 
   /* три Ткача это вес 6: Ткач (2) ещё влезает ровно в 8 */
-  const forTkach = head({ klinoks: 0 });
+  const forTkach = head({ tkachi: 4, klinoks: 0 });
   assert.deepEqual(forTkach.yardOrder(rich(three), valley), { kind: 'yard', cls: 'ткач' });
 
-  /* три Ткача и Клинок это 7: Ткач уже не влезает, а второй Клинок — да */
+  /* три Ткача и Клинок это 7: четвёртый Ткач нужен, но уже не влезает, а
+     второй Клинок — да; невлезающее желание не блокирует другое */
   const mixed = [...three, unit('K-A1', { cls: 'клинок' })];
-  const forKlinok = head({ klinoks: 2, jamChan: 0 });
+  const forKlinok = head({ tkachi: 4, klinoks: 2, jamChan: 0 });
   assert.deepEqual(forKlinok.yardOrder(rich(mixed), valley), { kind: 'yard', cls: 'клинок' });
 
-  const onlyTkach = head({ klinoks: 0 });
+  const onlyTkach = head({ tkachi: 4, klinoks: 0 });
   assert.equal(onlyTkach.yardOrder(rich(mixed), valley), null, 'Ткач влез в вес 9 из 8');
 });
 

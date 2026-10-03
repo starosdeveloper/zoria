@@ -37,13 +37,15 @@ const DENY_LAND = 11;
 const DENY_PATH = 12;
 const DENY_OTHER = 21;
 
-type PlanKind = 'take' | 'feed' | 'build' | 'stage' | 'jam';
+type PlanKind = 'take' | 'feed' | 'build' | 'stage' | 'jam' | 'ram';
 
 interface Plan {
   readonly kind: PlanKind;
   readonly at: Hex;
   readonly key: string;
   readonly since: number;
+  /** For `ram`: the foe machine chased (rule 11.6 names a machine, not a cell). */
+  readonly target?: string;
 }
 
 /** Tunables of this preset. Named so that an experiment is an edit of one line. */
@@ -75,10 +77,16 @@ export interface HarvestDials {
   readonly klinoks: number;
   /** A Klinok is only worth its channel once the tick budget reaches this. */
   readonly jamChan: number;
+  /** 1 - Klinki guard instead of jamming: ram a foe Tkach standing on a needle of
+      ours. It is heating it (9.2), and a ram on a working Tkach is clean (11.7):
+      the Klinok lives, the needle stays, the rival loses a Tkach. */
+  readonly guard: number;
 }
 
+/* Three Tkachi and a guard Klinok (weight 7 of 8), measured 03.10 on three seed
+   sets of 15 packs: 360 shares of 405 against 321 with four Tkachi and no guard. */
 export const DIALS: HarvestDials = {
-  tkachi: 4,
+  tkachi: 3,
   cmds: 2,
   quiet: 3,
   bid: 137,
@@ -88,8 +96,9 @@ export const DIALS: HarvestDials = {
   stage: 60,
   reach: 12,
   forget: 30,
-  klinoks: 0,
+  klinoks: 1,
   jamChan: 220,
+  guard: 1,
 };
 
 /** Has the machine begun a step? Rule 10.6 names both halves: a non-empty path
@@ -126,7 +135,7 @@ export class HarvestBot extends BlankBot {
       `silent` is the longest run of silent ticks (23.2): the charter takes the slot at 6, so
       this number answers P2-04 without a thirty-minute run at match tempo. `sent` and `nacks`
       count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
-  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
+  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, ram: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
   /** Отказы по кодам протокола: код -> сколько раз (04-protocol.md, 6.6). */
   readonly denyBy = new Map<string, number>();
 
@@ -455,6 +464,10 @@ export class HarvestBot extends BlankBot {
     /* голка на соте — хоть манифестная, хоть поставленная в бою (26.2) */
     if (plan.kind === 'build') return v.needles.has(plan.key) || this.owner.has(plan.key) || this.badSite.has(plan.key);
     if (plan.kind === 'feed') return !mine || obs.mine.needles.some((n) => key(n.q, n.r) === plan.key && n.dark);
+    /* A guard's chase holds while the foe is still in sight on a needle of ours:
+       stepped off, it stopped heating it; out of sight, the node drops the chase
+       anyway (11.6); and once the needle is theirs there is nothing to save. */
+    if (plan.kind === 'ram') return !obs.foe.some((f) => f.id === plan.target && this.owner.get(key(f.q, f.r)) === this.slot);
     /* A jam holds while the needle is still someone else's and still burning:
        a dark or retaken needle yields no loot at all (8.7, 11.4). */
     if (plan.kind === 'jam') {
@@ -468,6 +481,13 @@ export class HarvestBot extends BlankBot {
   /** One command that moves the plan forward, or none when the plan is walking. */
   private planStep(plan: Plan, u: MineUnit): Order | null {
     const here = same({ q: u.q, r: u.r }, plan.at);
+    /* `ram` names the machine and the node walks the Klinok to it (11.6): one
+       command, then nothing while the chase is on. */
+    if (plan.kind === 'ram') {
+      if (plan.target === undefined) return null;
+      if (u.task !== null && u.task.ram === plan.target) return null;
+      return { kind: 'ram', unit: u.id, target: plan.target };
+    }
     /* A jam is thrown from any cell within one of the needle (11.1), so the
        Klinok is not walked onto it - and `jam` with hold is the command the
        world reads, not the step. */
@@ -540,7 +560,7 @@ export class HarvestBot extends BlankBot {
   private pickPlan(u: MineUnit, obs: Observe, v: Valley, o: RulesOracle): Plan | null {
     const busy = this.taken();
     const from: Hex = { q: u.q, r: u.r };
-    if (u.cls !== 'ткач') return this.jamPlan(obs, v, from, busy);
+    if (u.cls !== 'ткач') return this.dials.guard ? this.guardPlan(obs, from, busy) : this.jamPlan(obs, v, from, busy);
 
     const order = this.orderPlan(obs, v, o, from, busy);
     if (order) return order;
@@ -568,6 +588,27 @@ export class HarvestBot extends BlankBot {
     if (build) return build;
 
     return this.feedPlan(obs, v, from, busy);
+  }
+
+  /** The nearest foe Tkach in sight standing on a needle of ours. Measured before
+      writing this: 11-36 sieges a match in plain sight and 10-35 needles lost, most
+      after tick 600 - the head saw them and did nothing. The Keeper's Tkachi count
+      too: they retake ring needles we hold, and ramming his machines draws no
+      answer (21.5). */
+  private guardPlan(obs: Observe, from: Hex, busy: Set<string>): Plan | null {
+    let best: Plan | null = null;
+    let bestD = Infinity;
+    for (const f of obs.foe) {
+      if (f.cls !== 'ткач') continue;
+      const k = key(f.q, f.r);
+      if (this.owner.get(k) !== this.slot || busy.has(k)) continue;
+      const d = hexDist(from, f);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind: 'ram', at: { q: f.q, r: f.r }, key: k, since: obs.t, target: f.id };
+      }
+    }
+    return best;
   }
 
   /** A jam takes the needle's coverage for us and leaves its owner nothing (8.7, 11.4).
@@ -838,11 +879,17 @@ export class HarvestBot extends BlankBot {
        a wish that does not fit must not block the other one, or the yard stops
        buying the moment the ceiling is one weight away. */
     const wish: { cls: ClsName; price: number; w: number }[] = [];
-    if (klinoks + this.pending['клинок'] < this.dials.klinoks && obs.pulse.chanAt >= this.dials.jamChan) {
-      wish.push({ cls: 'клинок', price: v.num.costKlinok, w: wKlinok });
-    }
-    if (tkachi + this.pending['ткач'] < this.dials.tkachi) {
+    /* A Tkach that is wanted and fits goes before any Klinok, and waits for its
+       energy rather than let a Klinok take it: a Klinok bought first at 120 start
+       energy left nothing for a Tkach, and on two start needles the regen is 0.5
+       a tick - five matches of nine stood at 2 needles on tick 300. */
+    const tkachFirst = tkachi + this.pending['ткач'] < this.dials.tkachi && weight + wTkach <= cap;
+    if (tkachFirst) {
       wish.push({ cls: 'ткач', price: v.num.costTkach, w: wTkach });
+    } else if (klinoks + this.pending['клинок'] < this.dials.klinoks && (this.dials.guard || obs.pulse.chanAt >= this.dials.jamChan)) {
+      /* the channel gate is the jam's (64 to start, 8 a tick to hold); a guard
+         pays only its hands, and only while a chase is on */
+      wish.push({ cls: 'клинок', price: v.num.costKlinok, w: wKlinok });
     }
     for (const want of wish) {
       if (weight + want.w > cap) continue;

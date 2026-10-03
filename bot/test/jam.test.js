@@ -14,7 +14,7 @@ const FOE = { q: 2, r: -9 };
 const dist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q - b.q + a.r - b.r)) / 2;
 
 const head = () => {
-  const b = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  const b = new HarvestBot({ ...DIALS, tkachi: 4, klinoks: 1, jamChan: 0, guard: 0 });
   b.init(manifestBytes, 'A');
   return b;
 };
@@ -104,7 +104,7 @@ test('стартовую голку соперника не глушат: она
 
 test('верфь: желание, которое не влезает в рой, не блокирует другое', () => {
   /* рой полон четырьмя Ткачами (вес 8 из 8) — заказывать нечего */
-  const full = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  const full = new HarvestBot({ ...DIALS, tkachi: 4, klinoks: 1, jamChan: 0, guard: 0 });
   full.init(manifestBytes, 'A');
   const four = ['T-A1', 'T-A2', 'T-A3', 'T-A4'].map((id) => unit(id));
   assert.equal(
@@ -113,18 +113,36 @@ test('верфь: желание, которое не влезает в рой, 
     'заказ при полном рое',
   );
 
-  /* три Ткача: Клинок весит 1 и влезает — он и предпочтителен */
-  const room = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 0 });
+  /* три Ткача при норме четыре: четвёртый Ткач влезает (вес 8) — он и берётся,
+     Клинок ждёт. Клинок первым на старте оставлял партию на двух голках */
+  const room = new HarvestBot({ ...DIALS, tkachi: 4, klinoks: 1, jamChan: 0, guard: 0 });
   room.init(manifestBytes, 'A');
   const three = ['T-A1', 'T-A2', 'T-A3'].map((id) => unit(id));
   const out = room.think(observe({ t: 50, pulse: { chanAt: 400, energy: 300 }, mine: { units: three } }));
   assert.deepEqual(
     out.filter((o) => o.kind === 'yard'),
+    [{ kind: 'yard', cls: 'ткач' }],
+  );
+
+  /* норма Ткачей набрана — теперь Клинок */
+  const met = new HarvestBot({ ...DIALS, tkachi: 3, klinoks: 1, jamChan: 0, guard: 0 });
+  met.init(manifestBytes, 'A');
+  assert.deepEqual(
+    met.think(observe({ t: 50, pulse: { chanAt: 400, energy: 300 }, mine: { units: three } })).filter((o) => o.kind === 'yard'),
     [{ kind: 'yard', cls: 'клинок' }],
   );
 
+  /* Ткач нужен, но заряда на него нет: Клинок его заряд не перехватывает */
+  const poor = new HarvestBot({ ...DIALS, tkachi: 4, klinoks: 1, jamChan: 0, guard: 0 });
+  poor.init(manifestBytes, 'A');
+  assert.deepEqual(
+    poor.think(observe({ t: 50, pulse: { chanAt: 400, energy: 60 }, mine: { units: three } })).filter((o) => o.kind === 'yard'),
+    [],
+    'Клинок купили на заряд, который копился на Ткача',
+  );
+
   /* канал не дорос до jamChan: Клинок не нужен, но Ткач — да */
-  const thin = new HarvestBot({ ...DIALS, klinoks: 1, jamChan: 10000 });
+  const thin = new HarvestBot({ ...DIALS, tkachi: 4, klinoks: 1, jamChan: 10000, guard: 0 });
   thin.init(manifestBytes, 'A');
   const two = ['T-A1', 'T-A2'].map((id) => unit(id));
   assert.deepEqual(

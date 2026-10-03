@@ -78,11 +78,28 @@ test('печать без адреса — всё равно простой, а 
   assert.doesNotMatch(q.out(), /вхід 1/, 'без печати бот пошёл входить');
 });
 
+/** Голова со служебным портом. Между `freePort` и запуском ребёнка порт может
+    перехватить параллельный файл проверок (у `status.test.js` свой порт 0) —
+    тогда ребёнок честно выходит с кодом 3 и `EADDRINUSE`. Это гонка проверки,
+    а не бота, и только её повторяют; любой другой отказ роняет проверку. */
+async function serving(extra) {
+  for (let i = 0; i < 3; i++) {
+    const port = await freePort();
+    const p = launch(bare({ STATUS_PORT: String(port), STATUS_HOST: '127.0.0.1', ...extra }));
+    const up = await p.line(/службовий порт \d+/).then(
+      () => true,
+      () => false,
+    );
+    if (up) return { p, port };
+    const code = await p.exit;
+    if (code !== 3 || !/EADDRINUSE/.test(p.out())) assert.fail('служебный порт не поднялся, код ' + code + ':\n' + p.out());
+  }
+  return assert.fail('порт трижды перехватили между freePort и запуском');
+}
+
 test('со служебным портом голова жива, отвечает о простое и гаснет по SIGTERM', async () => {
-  const port = await freePort();
-  const p = launch(bare({ STATUS_PORT: String(port), STATUS_HOST: '127.0.0.1', ZARIA_PRESET: 'шир', ZARIA_FREEZE: '1', ZARIA_ENGINE: 'ab'.repeat(32) }));
+  const { p, port } = await serving({ ZARIA_PRESET: 'шир', ZARIA_FREEZE: '1', ZARIA_ENGINE: 'ab'.repeat(32) });
   try {
-    await p.line(/службовий порт \d+/);
     assert.match(p.out(), new RegExp('службовий порт ' + port));
     const st = await (await fetch('http://127.0.0.1:' + port + '/state')).json();
     assert.equal(st.state, 'lobby');
@@ -102,10 +119,8 @@ test('со служебным портом голова жива, отвечае
 });
 
 test('без своих переменных голова садится «жатвой» с хешем установленного рушія', async () => {
-  const port = await freePort();
-  const p = launch(bare({ STATUS_PORT: String(port), STATUS_HOST: '127.0.0.1' }));
+  const { p, port } = await serving({});
   try {
-    await p.line(/службовий порт/);
     const st = await (await fetch('http://127.0.0.1:' + port + '/state')).json();
     assert.equal(st.preset, 'жатва', 'по умолчанию в зачёт уехала бы заглушка шаблона');
     assert.equal(st.freeze, false);

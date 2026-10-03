@@ -55,6 +55,42 @@ const tally = (c, o) => {
     else if (here !== undefined && here !== c.slot) c.heat++;
     else c.other++;
   }
+  /* куда уходят голки: взятые у нас (кем и в какой половине партии), взятые
+     нами, заглушённые наши, погибшие наши машины */
+  const half = o.t <= 600 ? 0 : 1;
+  for (const e of o.events) {
+    if (e.type === 'cap' && e.from === c.slot && e.p !== c.slot) {
+      c.lostNeedles[half]++;
+      c.takers.set(e.p, (c.takers.get(e.p) ?? 0) + 1);
+    } else if (e.type === 'cap' && e.p === c.slot) c.gained[e.from === null ? 0 : 1]++;
+    else if (e.type === 'jam' && e.own === c.slot && e.p !== c.slot) c.jammed++;
+    else if (e.type === 'lost' && e.p === c.slot) c.dead.set(e.why, (c.dead.get(e.why) ?? 0) + 1);
+    else if (e.type === 'ram' && e.tgt === c.slot && e.p !== c.slot) {
+      /* кто таранит и что делал наш Ткач на этой соте в прошлом кадре */
+      const was = c.prev.get(e.q + ',' + e.r) ?? 'не видно';
+      const k = e.p + ':' + was;
+      c.rammed.set(k, (c.rammed.get(k) ?? 0) + 1);
+    }
+  }
+  /* осада: чужой Ткач стоит на нашей голке у нас на виду — греет её (9.2) */
+  const sieged = new Set();
+  for (const f of o.foe) {
+    if (f.cls !== 'ткач' || f.p === 'K') continue;
+    if (needleAt.get(f.q + ',' + f.r) !== c.slot) continue;
+    const k = f.id + '@' + f.q + ',' + f.r;
+    sieged.add(k);
+    c.siegeTicks++;
+    if (!c.sieges.has(k)) c.siegeStarts++;
+  }
+  c.sieges = sieged;
+  c.prev = new Map(
+    o.mine.units.map((u) => {
+      const t = u.task;
+      const here = needleAt.get(u.q + ',' + u.r);
+      const doing = !t ? (here !== undefined && here !== c.slot ? 'гріє' : 'стоїть') : t.path > 0 ? 'йде' : t.site ? 'будує' : t.feed ? 'живить' : 'інше';
+      return [u.q + ',' + u.r, u.cls === 'ткач' ? doing : 'клинок'];
+    }),
+  );
   const lit = o.mine.needles.filter((n) => !n.dark).length;
   const at = o.t + ':' + o.mine.needles.length + '/' + lit + ' з' + Math.round(o.pulse.energy);
   if (MARKS.includes(o.t)) c.curve.push(at);
@@ -62,7 +98,29 @@ const tally = (c, o) => {
 };
 const clocked = (make) => () => {
   const inner = make();
-  const c = { slot: '', tkach: 0, idle: 0, walk: 0, build: 0, heat: 0, feed: 0, other: 0, klinok: 0, curve: [], last: '' };
+  const c = {
+    slot: '',
+    tkach: 0,
+    idle: 0,
+    walk: 0,
+    build: 0,
+    heat: 0,
+    feed: 0,
+    other: 0,
+    klinok: 0,
+    curve: [],
+    last: '',
+    lostNeedles: [0, 0],
+    takers: new Map(),
+    gained: [0, 0],
+    jammed: 0,
+    dead: new Map(),
+    rammed: new Map(),
+    prev: new Map(),
+    sieges: new Set(),
+    siegeTicks: 0,
+    siegeStarts: 0,
+  };
   clocks.push(c);
   return {
     init: (m, slot) => {
@@ -87,6 +145,15 @@ const showClocks = (list) => {
         ', гріє ' + pct(c.heat, c.tkach) + ', живить ' + pct(c.feed, c.tkach) + ', інше ' + pct(c.other, c.tkach) +
         ' (ткач-тактів ' + c.tkach + ', клинок-тактів ' + c.klinok + ')   голок/горить/заряд: ' + [...c.curve, c.last].join('  '),
     );
+    const who = [...c.takers].map(([p, n]) => p + ' ' + n).join(', ') || 'ніхто';
+    const dead = [...c.dead].map(([w, n]) => w + ' ' + n).join(', ') || 'нема';
+    console.log(
+      '        голки: забрали в нас ' + c.lostNeedles[0] + ' до 600 / ' + c.lostNeedles[1] + ' після (' + who + '); взяли ми ' +
+        c.gained[0] + ' нічиїх, ' + c.gained[1] + ' чужих; глушили наших ' + c.jammed + '; загинуло машин: ' + dead,
+    );
+    const rams = [...c.rammed].sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ' ' + n).join(', ') || 'нема';
+    console.log('        тарани по нас (хто:що робила машина): ' + rams);
+    console.log('        облоги наших голок на виду: ' + c.siegeStarts + ' (чужих ткач-тактів на наших голках ' + c.siegeTicks + ')');
   }
 };
 
