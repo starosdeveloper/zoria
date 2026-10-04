@@ -81,10 +81,18 @@ export interface HarvestDials {
       ours. It is heating it (9.2), and a ram on a working Tkach is clean (11.7):
       the Klinok lives, the needle stays, the rival loses a Tkach. */
   readonly guard: number;
+  /** Ticks a Tkach may stand short of its target before the plan is dropped and the
+      target set aside; 0 - never. The node's path does not know bodies (SDK 3, 10.4):
+      a parked foe on the path blocks the step, the node drops the task after a few
+      ticks, the same `move` lays the same path, and the Tkach waits again - a third
+      of all Tkach time against the sample charters went to plans older than 120 ticks. */
+  readonly stall: number;
 }
 
 /* Three Tkachi and a guard Klinok (weight 7 of 8), measured 03.10 on three seed
-   sets of 15 packs: 360 shares of 405 against 321 with four Tkachi and no guard. */
+   sets of 15 packs: 360 shares of 405 against 321 with four Tkachi and no guard.
+   Dropping a walk stalled for 20 ticks: 375 against 360, every set up, the held-out
+   one too (04.10). A second guard Klinok: 234 against 238 - not taken. */
 export const DIALS: HarvestDials = {
   tkachi: 3,
   cmds: 2,
@@ -99,6 +107,7 @@ export const DIALS: HarvestDials = {
   klinoks: 1,
   jamChan: 220,
   guard: 1,
+  stall: 20,
 };
 
 /** Has the machine begun a step? Rule 10.6 names both halves: a non-empty path
@@ -128,6 +137,8 @@ export class HarvestBot extends BlankBot {
   private readonly badSite = new Set<string>();
   /** Cells a move was refused for, with the tick of the refusal. */
   private readonly badGoal = new Map<string, number>();
+  /** Where each machine stands and since which tick: the stall check reads it. */
+  private readonly still = new Map<string, { at: string; since: number }>();
   /** Машины на сотах этого такта: сота -> имя машины. Чистится каждый такт. */
   private readonly bodies = new Map<string, string>();
 
@@ -135,7 +146,7 @@ export class HarvestBot extends BlankBot {
       `silent` is the longest run of silent ticks (23.2): the charter takes the slot at 6, so
       this number answers P2-04 without a thirty-minute run at match tempo. `sent` and `nacks`
       count what the gatekeeper did with the frames - a tick of refusals only is silence too. */
-  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, ram: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
+  readonly stat = { take: 0, build: 0, feed: 0, stage: 0, jam: 0, ram: 0, stall: 0, yard: 0, bid: 0, quiet: 0, sent: 0, orders: 0, nacks: 0, garbage: 0, silent: 0 };
   /** Отказы по кодам протокола: код -> сколько раз (04-protocol.md, 6.6). */
   readonly denyBy = new Map<string, number>();
 
@@ -186,6 +197,11 @@ export class HarvestBot extends BlankBot {
     this.fixSeat(obs);
     this.sync(obs, v);
     this.anchors = this.litAnchors(obs);
+    /* every tick and for every machine: unitOrder is not called for all of them */
+    for (const u of obs.mine.units) {
+      const at = key(u.q, u.r);
+      if (this.still.get(u.id)?.at !== at) this.still.set(u.id, { at, since: obs.t });
+    }
 
     const out: Order[] = [];
     const chanAt = obs.pulse.chanAt;
@@ -448,7 +464,12 @@ export class HarvestBot extends BlankBot {
     if (plan) {
       const done = this.planDone(plan, obs, v);
       if (done) this.plans.delete(u.id);
-      else return this.planStep(plan, u);
+      else if (this.stalled(u, plan, obs.t)) {
+        /* the same target would lay the same blocked path: set it aside */
+        this.plans.delete(u.id);
+        this.badGoal.set(plan.key, obs.t);
+        this.stat.stall++;
+      } else return this.planStep(plan, u);
     }
 
     const next = this.pickPlan(u, obs, v, o);
@@ -456,6 +477,16 @@ export class HarvestBot extends BlankBot {
     this.plans.set(u.id, next);
     this.stat[next.kind]++;
     return this.planStep(next, u);
+  }
+
+  /** A walk that stopped: short of the target, unmoved for `stall` ticks and the
+      plan at least that old. Only walks to a cell count - a Klinok's chase is the
+      node's (11.6), and a machine on its target is working, not stuck. */
+  private stalled(u: MineUnit, plan: Plan, t: number): boolean {
+    if (this.dials.stall <= 0 || plan.kind === 'ram' || plan.kind === 'jam') return false;
+    if (same({ q: u.q, r: u.r }, plan.at)) return false;
+    const still = this.still.get(u.id);
+    return still !== undefined && t - still.since >= this.dials.stall && t - plan.since >= this.dials.stall;
   }
 
   private planDone(plan: Plan, obs: Observe, v: Valley): boolean {

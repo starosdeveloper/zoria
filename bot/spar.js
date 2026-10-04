@@ -9,6 +9,7 @@
 import { createEngine } from '@zoria/engine';
 import { decodeManifest, decodeObserve } from '@zoria/protocol';
 import { ARCHETYPES, runPack, sampleBot } from '@zoria/sdk';
+import { createNakazSparring, NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
 import { DIALS, HarvestBot } from './dist/harvest.js';
 
 /* ручки пресета можно переопределить на один прогон: SPAR_DIALS='{"reach":26}' */
@@ -19,12 +20,15 @@ const SEEDS = seeds.length ? seeds : [2026, 7, 31337];
 const TICKS = Number(process.env.SPAR_TICKS || 1200);
 
 /* соперники по умолчанию — как у локального пакета; SPAR_RIVALS='проривник,рівний'
-   ставит зеркала архетипов, чтобы разобрать один состав турнира с SPAR_WHY */
+   ставит зеркала архетипов, 'грамота:черепаха,грамота:тиск' — образцы грамот SDK,
+   чтобы разобрать один состав турнира с SPAR_WHY / SPAR_TIME */
 const RIVALS = (process.env.SPAR_RIVALS || '').split(',').filter(Boolean);
+const rival = (name) =>
+  name.startsWith('грамота:')
+    ? { bot: () => createNakazSparring(NAKAZ_SAMPLES[name.slice('грамота:'.length)]) }
+    : { bot: () => sampleBot(createEngine, name) };
 const rivals = () =>
-  RIVALS.length
-    ? RIVALS.map((name) => ({ bot: () => sampleBot(createEngine, name) }))
-    : [{ bot: () => sampleBot(createEngine, 'обхідник') }, { style: { ...ARCHETYPES['рівний'] } }];
+  RIVALS.length ? RIVALS.map(rival) : [{ bot: () => sampleBot(createEngine, 'обхідник') }, { style: { ...ARCHETYPES['рівний'] } }];
 
 const pack = (seed, seat) => runPack(createEngine, { seed, ticks: TICKS, cast: [seat, ...rivals()] });
 

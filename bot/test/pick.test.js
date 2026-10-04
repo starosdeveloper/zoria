@@ -284,6 +284,64 @@ test('стоящая машина с застарелым wait — не поср
   assert.ok(b.unitOrder(standing, observe({ t: 300 }), valley, oracle), 'стоящему Ткачу плана не дали');
 });
 
+test('застрявший на пути план снимается, цель откладывается (тело на пути, 10.4)', () => {
+  /* Путь вузла не знает тел: припаркованная чужая машина на пути блокирует шаг,
+     вузол через несколько тактов снимает задание, тот же move кладёт тот же
+     путь — и так до конца партии. Против образцов грамот на это уходила треть
+     времени Ткачей. */
+  const at = { q: 0, r: -9 };
+  const goal = { q: -3, r: -6 };
+  const plan = (since) => ({ kind: 'build', at: goal, key: key(goal.q, goal.r), since });
+  const stuck = unit('T-A1', { q: at.q, r: at.r });
+
+  const b = head({ stall: 20 });
+  b.plans.set('T-A1', plan(300));
+  b.still.set('T-A1', { at: key(at.q, at.r), since: 300 });
+  b.t = 319;
+  const early = b.unitOrder(stuck, observe({ t: 319 }), valley, oracle);
+  assert.deepEqual(b.plans.get('T-A1')?.at, goal, 'снят раньше срока');
+  assert.equal(early?.kind, 'move', 'план не повёл к цели');
+
+  b.t = 320;
+  b.unitOrder(stuck, observe({ t: 320 }), valley, oracle);
+  assert.equal(b.stat.stall, 1, 'застрявший план не снят');
+  assert.notDeepEqual(b.plans.get('T-A1')?.at, goal, 'та же цель выбрана снова');
+  assert.equal(b.badGoal.get(key(goal.q, goal.r)), 320, 'цель не отложена');
+
+  /* выключено — план живёт как раньше */
+  const off = head({ stall: 0 });
+  off.plans.set('T-A1', plan(300));
+  off.still.set('T-A1', { at: key(at.q, at.r), since: 300 });
+  off.t = 900;
+  off.unitOrder(stuck, observe({ t: 900 }), valley, oracle);
+  assert.equal(off.stat.stall, 0);
+  assert.deepEqual(off.plans.get('T-A1')?.at, goal);
+});
+
+test('застрявшим не считается: Ткач на цели, свежий план, погоня Клинка', () => {
+  const goal = { q: -3, r: -6 };
+  const b = head({ stall: 20 });
+  const onTarget = unit('T-A1', { q: goal.q, r: goal.r });
+  b.still.set('T-A1', { at: key(goal.q, goal.r), since: 0 });
+  assert.equal(b.stalled(onTarget, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 0 }, 500), false, 'работа на цели — не застревание');
+
+  const away = unit('T-A2', { q: 0, r: -9 });
+  b.still.set('T-A2', { at: key(0, -9), since: 0 });
+  assert.equal(b.stalled(away, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 490 }, 500), false, 'план моложе порога');
+  assert.equal(b.stalled(away, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 480 }, 500), true);
+  assert.equal(b.stalled(away, { kind: 'ram', at: goal, key: key(goal.q, goal.r), since: 0, target: 'T-B1' }, 500), false, 'погоню ведёт вузол');
+  assert.equal(b.stalled(away, { kind: 'jam', at: goal, key: key(goal.q, goal.r), since: 0 }, 500), false);
+});
+
+test('стояние отслеживается каждый такт и сбрасывается шагом', () => {
+  const b = head({ stall: 20 });
+  b.think(observe({ t: 300, mine: { units: [unit('T-A1', { q: 0, r: -9, wait: 1, task: task({ path: 3 }) })] } }));
+  b.think(observe({ t: 310, mine: { units: [unit('T-A1', { q: 0, r: -9, wait: 1, task: task({ path: 3 }) })] } }));
+  assert.deepEqual(b.still.get('T-A1'), { at: key(0, -9), since: 300 }, 'машина посреди шага не попала в учёт');
+  b.think(observe({ t: 311, mine: { units: [unit('T-A1', { q: 1, r: -9 })] } }));
+  assert.deepEqual(b.still.get('T-A1'), { at: key(1, -9), since: 311 }, 'шаг не сбросил стояние');
+});
+
 test('Клинок глушит ближнюю чужую горящую голку у своей сети (8.7, 10.8)', () => {
   const b = head({ klinoks: 1 });
   b.owner.set(key(RUIN.q, RUIN.r), 'B');
