@@ -67,6 +67,8 @@ export class Seat {
   /* кидки за партію: місце і повідомлення -> скільки разів */
   readonly faults = new Map<string, number>();
   private faultLines = 0;
+  /* щоденник не пишеться до кінця партії: запис уже раз упав */
+  private beliefBroken = false;
   private readonly opt: SeatOptions;
   private readonly born: number;
 
@@ -116,18 +118,23 @@ export class Seat {
   readonly bot: WireBot = {
     init: (manifest, slot) => {
       this.strategy.init(manifest, slot);
-      if (this.opt.beliefFile) writeFileSync(this.opt.beliefFile, '');
+      this.beliefBroken = false;
+      const file = this.opt.beliefFile;
+      if (file) this.journal(() => writeFileSync(file, ''));
     },
     tick: (observe) => {
       const t0 = performance.now();
       const out = this.guarded('tick', () => this.strategy.tick(observe));
       /* щоденник пишеться синхронно: процес, що впав, не забирає останні такти */
-      if (this.opt.beliefFile) {
+      const file = this.opt.beliefFile;
+      if (file && !this.beliefBroken) {
         const frame = this.strategy.belief(decodeObserve(observe));
         if (frame) {
-          appendFileSync(this.opt.beliefFile, beliefLine(frame));
-          this.beliefFrames++;
-          this.beliefAt = Date.now();
+          this.journal(() => {
+            appendFileSync(file, beliefLine(frame));
+            this.beliefFrames++;
+            this.beliefAt = Date.now();
+          });
         }
       }
       this.think.push(performance.now() - t0);
@@ -137,6 +144,19 @@ export class Seat {
       this.guarded('feedback', () => this.strategy.feedback?.(verdicts));
     },
   };
+
+  /* Запис щоденника, що впав (диск повний, каталогу немає), не сміє забрати такт:
+     кидок із tick SDK зарахує тишею, і за шість таких тактів слот піде наказу -
+     партія з дефектом (К1). Втратити щоденник дешевше: причина в лог один раз,
+     до кінця партії щоденник мовчить, а такт відповідає як завжди. */
+  private journal(write: () => void): void {
+    try {
+      write();
+    } catch (e) {
+      this.beliefBroken = true;
+      this.noted('щоденник', e);
+    }
+  }
 
   /* кидок голови SDK ловить сам і рахує в stats.faults, але мовчки: що саме
      кинуло, не видно ніде. Тут кидок записується і летить далі - ціну такту

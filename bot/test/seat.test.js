@@ -9,9 +9,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { encodeObserve } from '@zoria/protocol';
 import { EventEmitter } from 'node:events';
 import { FAULT_LINES, IDLE, quantile, Seat } from '../dist/seat.js';
@@ -275,4 +275,28 @@ test('неперехваченное в процессе записываетс�
   assert.deepEqual(lines, ['кидок процес: обещание без catch', 'кидок процес: кидок из таймера']);
   assert.equal(proc.listenerCount('uncaughtException'), 1);
   assert.equal(proc.listenerCount('unhandledRejection'), 1);
+});
+
+test('упавший щоденник не забирает такт: одна строка в лог, дальше он молчит', () => {
+  /* Кидок из tick SDK засчитал бы тишиной, и через шесть тактов слот ушёл бы
+     наказу — партия с дефектом (К1). Дневник дешевле слота. */
+  const lines = [];
+  const file = join(mkdtempSync(join(tmpdir(), 'seat-')), 'нет-каталога', 'belief.ndjson');
+  const s = new Seat({ ...OPT, beliefFile: file, log: (l) => lines.push(l) });
+  s.strategy = { init() {}, tick: () => new Uint8Array([7]), belief: () => ({ t: 1, pulse: { energy: 0, chan: 0, ear: 0, minutes: 0, needles: 0 } }), report: () => '' };
+
+  s.bot.init(manifestBytes, 'A');
+  assert.deepEqual(s.bot.tick(new Uint8Array(0)), new Uint8Array([7]), 'такт не ответил командами головы');
+  assert.deepEqual(s.bot.tick(new Uint8Array(0)), new Uint8Array([7]));
+  assert.equal(lines.length, 1, 'строк про дневник: ' + JSON.stringify(lines));
+  assert.match(lines[0], /^кидок щоденник: /);
+  assert.equal(s.beliefFrames, 0);
+  assert.equal(s.think.length, 2, 'дума такта не записана');
+  assert.equal(s.faults.get(lines[0].slice('кидок '.length)), 1, 'повторные такты снова лезли писать дневник');
+
+  /* новая партия — новая попытка: каталог появился, дневник снова пишется */
+  mkdirSync(dirname(file));
+  s.bot.init(manifestBytes, 'B');
+  s.bot.tick(new Uint8Array(0));
+  assert.equal(s.beliefFrames, 1, 'после новой присяги дневник не ожил');
 });
