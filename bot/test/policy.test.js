@@ -9,15 +9,7 @@ import assert from 'node:assert/strict';
 import { DIALS } from '../dist/harvest.js';
 import { key } from '../dist/valley.js';
 import { observe, unit } from './frames.js';
-import { cfg, head, oracle, RUIN, SEAT, valley } from './world.js';
-
-const board = (cells, over = {}) => ({
-  order: { cells, from: 200, to: 400, bonus: cfg['orderBonus'], holdTicks: cfg['orderHoldTicks'], ...over },
-  pact: { active: [], breaks: [] },
-  cries: [],
-  dawn: false,
-  score: [0, 0, 0],
-});
+import { cfg, head, oracle, orderBoard as board, RUIN, SEAT, valley } from './world.js';
 
 test('замовлення важнее обычной руины: 30 минут — это целая голка за партию (18.4)', () => {
   const cells = [RUIN, { q: 4, r: -8 }, { q: 8, r: -9 }];

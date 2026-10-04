@@ -23,13 +23,21 @@ export interface Strategy extends WireBot {
   report(): string;
 }
 
-class HarvestStrategy implements Strategy {
-  private readonly head = new HarvestBot();
-  private book: BeliefBook | null = null;
+/* голова, яку стратегія веде: провід дає їй байти як є */
+type Head = WireBot & { feedback(verdicts: Uint8Array): void };
+
+/* Спільне в обох стратегій - передати голові маніфест, кадр і вердикти як є.
+   Різне - що завести на старті партії, звідки кадр щоденника і чий звіт. */
+abstract class HeadStrategy<H extends Head> implements Strategy {
+  protected head: H;
+
+  constructor(head: H) {
+    this.head = head;
+  }
 
   init(manifest: Uint8Array, slot: SlotName): void {
     this.head.init(manifest, slot);
-    this.book = new BeliefBook(slot);
+    this.started(slot);
   }
 
   tick(observe: Uint8Array): Uint8Array {
@@ -38,6 +46,22 @@ class HarvestStrategy implements Strategy {
 
   feedback(verdicts: Uint8Array): void {
     this.head.feedback(verdicts);
+  }
+
+  protected abstract started(slot: SlotName): void;
+  abstract belief(obs: Observe | null): BeliefFrame | null;
+  abstract report(): string;
+}
+
+class HarvestStrategy extends HeadStrategy<HarvestBot> {
+  private book: BeliefBook | null = null;
+
+  constructor() {
+    super(new HarvestBot());
+  }
+
+  protected started(slot: SlotName): void {
+    this.book = new BeliefBook(slot);
   }
 
   /* no mirror world here: the journal is assembled from the observation */
@@ -50,25 +74,15 @@ class HarvestStrategy implements Strategy {
   }
 }
 
-class MirrorStrategy implements Strategy {
-  private head: MirrorBot;
+class MirrorStrategy extends HeadStrategy<MirrorBot> {
   private trace: BeliefTrace | null = null;
 
   constructor(preset: string) {
-    this.head = sampleBot(createEngine, preset);
+    super(sampleBot(createEngine, preset));
   }
 
-  init(manifest: Uint8Array, slot: SlotName): void {
-    this.head.init(manifest, slot);
+  protected started(slot: SlotName): void {
     this.trace = new BeliefTrace(slot);
-  }
-
-  tick(observe: Uint8Array): Uint8Array {
-    return this.head.tick(observe);
-  }
-
-  feedback(verdicts: Uint8Array): void {
-    this.head.feedback(verdicts);
   }
 
   /* віра дзеркала: світ дзеркальної голови і є те, у що вона вірить */

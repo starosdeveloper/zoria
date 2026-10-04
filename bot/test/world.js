@@ -38,6 +38,16 @@ export const NONE = new Set();
 
 export const hexDist = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q - b.q + a.r - b.r)) / 2;
 
+/** Публичная часть кадра с открытым замовленням на этих сотах (18): окно и
+    награда — из манифеста, `over` правит поля доски. */
+export const orderBoard = (cells, over = {}) => ({
+  order: { cells, from: 200, to: 400, bonus: cfg['orderBonus'], holdTicks: cfg['orderHoldTicks'], ...over },
+  pact: { active: [], breaks: [] },
+  cries: [],
+  dawn: false,
+  score: [0, 0, 0],
+});
+
 /* Образец головы: `init` строит свой `RulesOracle`, а это целый экземпляр
    движителя — 49 мс на голову, то есть почти весь прогон проверок уходил на
    сотню одинаковых движителей. Долина и оракул неизменяемы (оракул по своему

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { key } from '../dist/valley.js';
 import { DIALS, HarvestBot, midStep } from '../dist/harvest.js';
 import { observe, task, unit, manifestBytes } from './frames.js';
-import { cfg, head, hexDist, NONE, oracle, RUIN, SEAT, valley } from './world.js';
+import { cfg, head, hexDist, NONE, oracle, orderBoard, RUIN, SEAT, valley } from './world.js';
 
 test('берём ближнюю ничью руину, которую держит нить (7.2, 9.2)', () => {
   const b = head();
@@ -148,13 +148,7 @@ test('живлення: только своя горящая, ненакормл
 test('замовлення: только пока окно открыто и пока успеваем (18.2, 18.3)', () => {
   const b = head();
   const cells = [RUIN, { q: 4, r: -8 }, { q: 8, r: -9 }];
-  const board = (over) => ({
-    order: { cells, from: 200, to: 290, bonus: cfg['orderBonus'], holdTicks: cfg['orderHoldTicks'], ...over },
-    pact: { active: [], breaks: [] },
-    cries: [],
-    dawn: false,
-    score: [0, 0, 0],
-  });
+  const board = (over) => orderBoard(cells, { to: 290, ...over });
   const plan = b.orderPlan(observe({ t: 210, pub: board() }), valley, oracle, SEAT, NONE);
   assert.ok(plan, 'замовлення рядом, а плана нет');
   assert.ok(cells.some((c) => key(c.q, c.r) === plan.key), 'план не по сотам замовлення');
