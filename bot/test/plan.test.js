@@ -157,7 +157,8 @@ test('отказанная цель откладывается на forget та�
 });
 
 test('план закончен ровно тогда, когда его причина исчезла', () => {
-  const b = head();
+  /* срок живлення проверяется отдельно ниже; здесь — только причины */
+  const b = head({ feedHold: 0 });
   const at = { q: RUIN.q, r: RUIN.r };
   const k = key(at.q, at.r);
   const plan = (kind) => ({ kind, at, key: k, since: 0 });
@@ -193,6 +194,25 @@ test('план закончен ровно тогда, когда его при�
 
   assert.equal(b.planDone(plan('stage'), obs({ t: valley.dawnAt - 1 }), valley), false, 'зори ещё нет');
   assert.equal(b.planDone(plan('stage'), obs({ t: valley.dawnAt }), valley), true, 'зоря настала');
+});
+
+test('живлення держит Ткача не дольше feedHold: потом он ищет работу лучше', () => {
+  /* Накормленная голка не гаснет, и план живлення жил до конца партии: Ткач,
+     однажды севший кормить, не поднимался, хотя заряд стоял на потолке, а
+     рядом были руины. На жеребе 4242 место B давало 187 рахунку против 293. */
+  const at = { q: RUIN.q, r: RUIN.r };
+  const k = key(at.q, at.r);
+  const fed = (t) => observe({ t, mine: { needles: [{ ...at, dark: false, fed: true, weight: 1 }] } });
+  const plan = { kind: 'feed', at, key: k, since: 300 };
+
+  const b = head({ feedHold: 60 });
+  b.owner.set(k, 'A');
+  assert.equal(b.planDone(plan, fed(359), valley), false, 'отпустили раньше срока');
+  assert.equal(b.planDone(plan, fed(360), valley), true, 'держит дольше feedHold');
+
+  const forever = head({ feedHold: 0 });
+  forever.owner.set(k, 'A');
+  assert.equal(forever.planDone(plan, fed(5000), valley), false, 'feedHold 0 — как раньше, без срока');
 });
 
 test('шаг плана: стоять и гріти, живити на месте, строить на месте', () => {

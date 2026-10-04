@@ -9,6 +9,7 @@
    Запуск:  npm run tourney [-- жереб жереб ...]
    Ручки:   TOURNEY_TICKS=1200  TOURNEY_BASE=0 (без базовой линии)
             TOURNEY_PAIRS=1,3,5 (только эти составы)
+            TOURNEY_SELF=1 (соперники — «жатва» по умолчанию)
             SPAR_DIALS='{"reach":26}' (ручки пресета)  */
 
 import { readFileSync } from 'node:fs';
@@ -46,11 +47,26 @@ const PAIRS = [
   [ourCharter(), mirror('шир'), { self: true }],
 ];
 
+/* TOURNEY_SELF=1 — соперники с «жатвой» по умолчанию (DIALS) на одном или двух
+   местах. Против зеркал и образцов турнир упёрся в потолок (133 доли из 135 на
+   04.10) и правку больше не различает; против самой себя 2.0 значит «наравне с
+   нынешней версией», и сдвиг в любую сторону виден. Соперник-«жатва» — своя
+   фабрика: в счётчики нашей головы он не попадает. */
+const harvest = () => ({ label: 'жатва', make: () => new HarvestBot(DIALS) });
+const SELF_PAIRS = [
+  [harvest(), harvest()],
+  [harvest(), mirror('рівний')],
+  [harvest(), mirror('проривник')],
+  [harvest(), charter('черепаха')],
+  [harvest(), mirror('облягач')],
+];
+const pool = process.env.TOURNEY_SELF === '1' ? SELF_PAIRS : PAIRS;
+
 const pick = process.env.TOURNEY_PAIRS
   ? process.env.TOURNEY_PAIRS.split(',')
-      .map((n) => PAIRS[Number(n) - 1])
+      .map((n) => pool[Number(n) - 1])
       .filter(Boolean)
-  : PAIRS;
+  : pool;
 
 const heads = [];
 const ourSeat = () => ({

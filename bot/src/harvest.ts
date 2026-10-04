@@ -91,12 +91,16 @@ export interface HarvestDials {
       ticks, the same `move` lays the same path, and the Tkach waits again - a third
       of all Tkach time against the sample charters went to plans older than 120 ticks. */
   readonly stall: number;
+  /** Ticks a feeding plan lasts before the Tkach looks for better work; 0 - forever. */
+  readonly feedHold: number;
 }
 
 /* Three Tkachi and a guard Klinok (weight 7 of 8), measured 03.10 on three seed
    sets of 15 packs: 360 shares of 405 against 321 with four Tkachi and no guard.
    Dropping a walk stalled for 20 ticks: 375 against 360, every set up, the held-out
-   one too (04.10). A second guard Klinok: 234 against 238 - not taken. */
+   one too (04.10). A second guard Klinok: 234 against 238 - not taken.
+   A feeding plan that ends after 120 ticks: 399 against 375, every set up, the
+   held-out one 133 against 129 (04.10). */
 export const DIALS: HarvestDials = {
   tkachi: 3,
   cmds: 2,
@@ -112,6 +116,7 @@ export const DIALS: HarvestDials = {
   jamChan: 220,
   guard: 1,
   stall: 20,
+  feedHold: 120,
 };
 
 /** Has the machine begun a step? Rule 10.6 names both halves: a non-empty path
@@ -501,7 +506,13 @@ export class HarvestBot extends BlankBot {
     if (plan.kind === 'take') return mine || !this.heatable(plan.key, plan.at.q, plan.at.r, v, obs.t);
     /* голка на соте — хоть манифестная, хоть поставленная в бою (26.2) */
     if (plan.kind === 'build') return v.needles.has(plan.key) || this.owner.has(plan.key) || this.badSite.has(plan.key);
-    if (plan.kind === 'feed') return !mine || obs.mine.needles.some((n) => key(n.q, n.r) === plan.key && n.dark);
+    if (plan.kind === 'feed') {
+      /* Feeding is the last resort, but a fed needle never went dark, so the plan
+         used to hold for the rest of the match: a Tkach that sat down to feed never
+         looked up again, with energy at its cap and ruins in reach. */
+      if (this.dials.feedHold > 0 && obs.t - plan.since >= this.dials.feedHold) return true;
+      return !mine || obs.mine.needles.some((n) => key(n.q, n.r) === plan.key && n.dark);
+    }
     /* A guard's chase holds while the foe is still in sight on a needle of ours:
        stepped off, it stopped heating it; out of sight, the node drops the chase
        anyway (11.6); and once the needle is theirs there is nothing to save. */
