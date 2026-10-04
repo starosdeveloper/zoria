@@ -329,6 +329,13 @@ test('застрявшим не считается: Ткач на цели, св
   assert.equal(b.stalled(away, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 480 }, 500), true);
   assert.equal(b.stalled(away, { kind: 'ram', at: goal, key: key(goal.q, goal.r), since: 0, target: 'T-B1' }, 500), false, 'погоню ведёт вузол');
   assert.equal(b.stalled(away, { kind: 'jam', at: goal, key: key(goal.q, goal.r), since: 0 }, 500), false);
+
+  /* план старый, но Ткач сдвинулся недавно — он идёт, а не застрял */
+  b.still.set('T-A2', { at: key(0, -9), since: 490 });
+  assert.equal(b.stalled(away, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 0 }, 500), false, 'идущего приняли за застрявшего');
+  /* машины ещё нет в учёте стояния — не застревание и не кидок */
+  const fresh = unit('T-A9', { q: 0, r: -9 });
+  assert.equal(b.stalled(fresh, { kind: 'take', at: goal, key: key(goal.q, goal.r), since: 0 }, 500), false);
 });
 
 test('стояние отслеживается каждый такт и сбрасывается шагом', () => {

@@ -165,11 +165,18 @@ test('план закончен ровно тогда, когда его при�
   const obs = (over) => observe({ t: 300, ...over });
 
   assert.equal(b.planDone(plan('take'), obs(), valley), false, 'руина ещё ничья');
+  /* соперник взял её десять тактов назад: пауза после взятия (9.3) — греть нельзя */
+  b.owner.set(k, 'B');
+  b.capAt.set(k, 290);
+  assert.equal(b.planDone(plan('take'), obs(), valley), true, 'греть чужую в паузе после взятия');
+  b.capAt.delete(k);
   b.owner.set(k, 'A');
   assert.equal(b.planDone(plan('take'), obs(), valley), true, 'голка взята');
 
-  assert.equal(b.planDone(plan('feed'), obs({ mine: { needles: [{ ...at, dark: false, fed: false, weight: 1 }] } }), valley), false);
-  assert.equal(b.planDone(plan('feed'), obs({ mine: { needles: [{ ...at, dark: true, fed: false, weight: 1 }] } }), valley), true, 'живлення погасшей голки');
+  /* в кадре не одна голка: гаснет та, что кормим, — и только она решает */
+  const other = { q: 5, r: -12, dark: false, fed: false, weight: 1 };
+  assert.equal(b.planDone(plan('feed'), obs({ mine: { needles: [{ ...at, dark: false, fed: false, weight: 1 }, other] } }), valley), false);
+  assert.equal(b.planDone(plan('feed'), obs({ mine: { needles: [{ ...at, dark: true, fed: false, weight: 1 }, other] } }), valley), true, 'живлення погасшей голки');
   b.owner.set(k, 'B');
   assert.equal(b.planDone(plan('feed'), obs(), valley), true, 'голка уже не наша');
 
