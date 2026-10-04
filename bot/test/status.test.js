@@ -201,6 +201,32 @@ test('строка запроса не меняет путь', async () => {
   }
 });
 
+test('ответ, который сам не собрался, закрывает соединение, а не уходит в никуда', async () => {
+  /* message-BigInt: JSON.stringify в ответе 500 бросает уже из catch маршрута.
+     Раньше такой промис отклонялся без обработчика (void route) */
+  let calls = 0;
+  const s = await serve({
+    state: () => {
+      calls++;
+      if (calls === 1) throw Object.assign(new Error('x'), { message: 10n });
+      return SNAPSHOT;
+    },
+    promote: () => 'шир',
+  });
+  const unhandled = [];
+  const onUnhandled = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await assert.rejects(fetch(s.url + '/state'), 'соединение должно оборваться: ответить нечем');
+    assert.equal((await fetch(s.url + '/state')).status, 200, 'сервер умер после несобранного ответа');
+    await new Promise((ok) => setImmediate(ok));
+    assert.deepEqual(unhandled, [], 'отклонённый промис маршрута ушёл без обработчика');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    await s.close();
+  }
+});
+
 test('Refusal несёт код и слово', () => {
   const r = new Refusal(409, 'freeze');
   assert.equal(r.code, 409);

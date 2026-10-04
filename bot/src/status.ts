@@ -119,6 +119,11 @@ async function route(head: Head, req: IncomingMessage, res: ServerResponse): Pro
 
 export function statusServer(head: Head): Server {
   return createServer((req, res) => {
-    void route(head, req, res);
+    /* route ловит всё, что бросает голова, но не то, что бросит сам ответ:
+       writeHead после уже ушедших заголовков бросает из catch. Такой промис
+       не должен уйти в никуда — соединение закрывается с этой причиной */
+    route(head, req, res).catch((e: unknown) => {
+      res.destroy(e instanceof Error ? e : new Error(String(e)));
+    });
   });
 }
