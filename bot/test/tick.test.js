@@ -9,9 +9,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { encodeVerdicts } from '@zoria/protocol';
 import { HarvestBot } from '../dist/harvest.js';
-import { key } from '../dist/valley.js';
+import { key, Valley } from '../dist/valley.js';
 import { observe, task, unit } from './frames.js';
-import { cfg, head, hexDist, manifestBytes, NONE, oracle, SEAT, valley } from './world.js';
+import { cfg, head, hexDist, manifest, manifestBytes, NONE, oracle, SEAT, valley } from './world.js';
 
 const busyUnits = (n) =>
   Array.from({ length: n }, (_, i) => unit('T-A' + (i + 1), { q: 4, r: -10, task: task({ goal: { q: 3, r: -9 }, path: 3 }) }));
@@ -358,6 +358,25 @@ test('счётчик корпусов отпускается по времени
   assert.equal(b.pending['ткач'], 1, 'отпустили раньше срока: корпус мог ещё выходить');
   b.sync(observe({ t: 325 }), valley);
   assert.equal(b.pending['ткач'], 0, 'счётчик не отпущен — верфь замолчит навсегда');
+});
+
+test('сдвиг мира: срок корпуса и дальность нити берутся из манифеста, не из литералов', () => {
+  /* 05.10 придут новые числа (1.4). Литерал, равный нынешнему миру, молчит,
+     пока мир не сдвинется, — и тогда голова играет по вчерашнему числу */
+  const shifted = new Valley({ ...manifest, cfg: { ...manifest.cfg, droneBuild: 10, linkRange: 7 } });
+
+  const b = head();
+  b.valley = shifted;
+  b.pending['ткач'] = 1;
+  b.yardAt = 300;
+  b.sync(observe({ t: 359 }), shifted);
+  assert.equal(b.pending['ткач'], 1, 'очередь 10 тактов, а счётчик отпущен по старым 24');
+  b.sync(observe({ t: 361 }), shifted);
+  assert.equal(b.pending['ткач'], 0);
+
+  assert.equal(b.reachMax(), 8, 'дальность ланки: нить 7 плюс пагорб (7.2)');
+  b.valley = valley;
+  assert.equal(b.reachMax(), 6);
 });
 
 test('чужая верфь наш счётчик не трогает', () => {

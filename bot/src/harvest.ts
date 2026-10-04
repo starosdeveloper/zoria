@@ -37,6 +37,10 @@ const DENY_LAND = 11;
 const DENY_PATH = 12;
 const DENY_OTHER = 21;
 
+/** Coverage radius of a needle: its cell and three rings (8.1; the 7 + 12 + 18 cells
+    of 8.4). A rule constant, not a manifest number - no `cfg` key carries it. */
+const COVER = 3;
+
 type PlanKind = 'take' | 'feed' | 'build' | 'stage' | 'jam' | 'ram';
 
 interface Plan {
@@ -385,8 +389,11 @@ export class HarvestBot extends BlankBot {
       }
     }
     /* A corpse in the yard queue is invisible in the frame (SDK 2), so it is
-       counted here; a count that never resolves would freeze the yard. */
-    if (obs.t - this.yardAt > 24) {
+       counted here; a count that never resolves would freeze the yard. The
+       release is six queue times (`droneBuild`, 4 today = 24 ticks): a world
+       with a slower yard must not drop the count while the corpse is still
+       queued, or the next order lands in a full swarm (`вага рою`). */
+    if (obs.t - this.yardAt > v.num.droneBuild * 6) {
       this.pending['ткач'] = 0;
       this.pending['клинок'] = 0;
     }
@@ -778,7 +785,8 @@ export class HarvestBot extends BlankBot {
     let best: Plan | null = null;
     let bestScore = 0;
     for (const a of this.anchors) {
-      for (const rad of [3, 4, 5]) {
+      /* out to the thread length: a site past it could not hold the thread (7.2) */
+      for (let rad = 3; rad <= v.num.linkRange; rad++) {
         for (const c of ring(a, rad)) {
           const k = key(c.q, c.r);
           if (this.off(k, busy) || this.badSite.has(k) || !this.buildable(k, c, v)) continue;
@@ -820,10 +828,17 @@ export class HarvestBot extends BlankBot {
   private relight(c: Hex, cut: readonly Hex[], o: RulesOracle): number {
     let n = 0;
     for (const at of cut) {
-      if (hexDist(at, c) > 6) continue;
+      if (hexDist(at, c) > this.reachMax()) continue;
       if (o.linkOk(at, c)) n++;
     }
     return n;
+  }
+
+  /** The farthest a link can reach: the thread length, one more from a hill (7.2).
+      Only a cheap filter before `linkOk`; a literal 6 here would silently drop
+      links the day a world shift lengthens the thread. */
+  private reachMax(): number {
+    return (this.valley?.num.linkRange ?? 0) + 1;
   }
 
   private buildable(k: string, c: Hex, v: Valley): boolean {
@@ -859,7 +874,7 @@ export class HarvestBot extends BlankBot {
     for (const k of v.ruins) {
       if (this.owner.get(k) !== null) continue;
       const at = v.cellOf(k);
-      if (hexDist(at, c) > 6 || this.threaded(at, o)) continue;
+      if (hexDist(at, c) > this.reachMax() || this.threaded(at, o)) continue;
       if (o.linkOk(at, c)) n++;
     }
     return n;
@@ -874,10 +889,12 @@ export class HarvestBot extends BlankBot {
       if (this.off(k, busy) || n.dark || n.weight < 1 || n.fed) continue;
       const at = { q: n.q, r: n.r };
       let free = 0;
-      for (const rad of [2, 3, 4]) {
+      /* feeding pushes the coverage out by `feedRing` rings (8.5): the gain lies
+         from ring 2 to the new edge, on cells no other needle of ours covers */
+      for (let rad = 2; rad <= COVER + v.num.feedRing; rad++) {
         for (const cell of ring(at, rad)) {
           if (!v.inValley(cell.q, cell.r)) continue;
-          if (this.anchors.some((a) => !same(a, at) && hexDist(a, cell) <= 3)) continue;
+          if (this.anchors.some((a) => !same(a, at) && hexDist(a, cell) <= COVER)) continue;
           free += v.price(cell.q, cell.r);
         }
       }

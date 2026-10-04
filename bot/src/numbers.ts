@@ -31,6 +31,8 @@ export interface WorldNumbers {
   readonly chanTick: number;
   readonly dawnRing: number;
   readonly crownCycle: number;
+  readonly feedRing: number;
+  readonly droneBuild: number;
 }
 
 /** Ключи, без которых пресет играть не может. */
@@ -52,6 +54,8 @@ export const NEEDED = [
   'chanTick',
   'dawnRing',
   'crownCycle',
+  'feedRing',
+  'droneBuild',
 ] as const satisfies readonly (keyof WorldNumbers)[];
 
 export function readNumbers(cfg: Record<string, number>): WorldNumbers {
