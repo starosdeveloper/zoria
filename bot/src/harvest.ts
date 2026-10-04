@@ -50,6 +50,9 @@ interface Plan {
   readonly since: number;
   /** For `ram`: the foe machine chased (rule 11.6 names a machine, not a cell). */
   readonly target?: string;
+  /** The branch of `pickPlan` that chose this plan - the path in code an episode
+      answer names (scoring 10.2). A build can come from three branches. */
+  readonly by?: string;
 }
 
 /** Tunables of this preset. Named so that an experiment is an edit of one line. */
@@ -126,6 +129,11 @@ export const DIALS: HarvestDials = {
     such a Tkach unplanned - 4355 of 4664 idle Tkach-ticks over three packs. */
 export function midStep(u: MineUnit): boolean {
   return u.wait > 0 && u.task !== null && u.task.path > 0;
+}
+
+/** Tag a plan with the `pickPlan` branch that chose it. */
+function by(plan: Plan | null, branch: string): Plan | null {
+  return plan ? { ...plan, by: branch } : null;
 }
 
 export class HarvestBot extends BlankBot {
@@ -609,34 +617,34 @@ export class HarvestBot extends BlankBot {
   private pickPlan(u: MineUnit, obs: Observe, v: Valley, o: RulesOracle): Plan | null {
     const busy = this.taken();
     const from: Hex = { q: u.q, r: u.r };
-    if (u.cls !== 'ткач') return this.dials.guard ? this.guardPlan(obs, from, busy) : this.jamPlan(obs, v, from, busy);
+    if (u.cls !== 'ткач') return this.dials.guard ? by(this.guardPlan(obs, from, busy), 'guard') : by(this.jamPlan(obs, v, from, busy), 'jam');
 
     const order = this.orderPlan(obs, v, o, from, busy);
-    if (order) return order;
+    if (order) return by(order, 'order');
 
     /* A needle of ours that lost the thread is coverage already bought: putting
        it back on the net is the cheapest income in the valley, so it outranks
        walking to a new ruin whenever the energy for one needle is there. */
     const relight = this.relightPlan(obs, v, o, from, busy);
-    if (relight) return relight;
+    if (relight) return by(relight, 'relight');
 
     /* The regen of a lit network is 2 energy a tick and the cap is 360: past the
        flood mark energy is the resource going to waste, not the needle price. */
     if (obs.pulse.energy >= this.dials.flood) {
       const rich = this.buildPlan(obs, v, o, from, busy);
-      if (rich) return rich;
+      if (rich) return by(rich, 'flood');
     }
 
     const take = this.takePlan(obs, v, o, from, busy);
-    if (take) return take;
+    if (take) return by(take, 'take');
 
     const stage = this.stagePlan(obs, v, o, from, busy);
-    if (stage) return stage;
+    if (stage) return by(stage, 'stage');
 
     const build = this.buildPlan(obs, v, o, from, busy);
-    if (build) return build;
+    if (build) return by(build, 'build');
 
-    return this.feedPlan(obs, v, from, busy);
+    return by(this.feedPlan(obs, v, from, busy), 'feed');
   }
 
   /** The nearest foe Tkach in sight standing on a needle of ours. Measured before

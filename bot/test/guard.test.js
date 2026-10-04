@@ -89,6 +89,8 @@ test('Клинок со сторожем таранит, без сторожа �
   guard.owner.set(k, 'A');
   const obs = observe({ t: 300, foe: [foe('T-B1', RUIN)] });
   assert.equal(guard.pickPlan(klinok(SEAT), obs, valley, null)?.kind, 'ram');
+  /* ветка — путь в коде, который назовёт ответ эпизода (episode.js) */
+  assert.equal(guard.pickPlan(klinok(SEAT), obs, valley, null)?.by, 'guard');
 
   const jam = head({ guard: 0, klinoks: 1, jamChan: 0 });
   jam.owner.set(k, 'A');

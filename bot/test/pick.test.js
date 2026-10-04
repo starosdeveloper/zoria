@@ -268,6 +268,10 @@ test('план машины не выдаётся посреди шага и н�
   const first = b.unitOrder(free, observe({ t: 300 }), valley, oracle);
   assert.ok(first, 'свободной машине плана не дали');
   assert.equal(b.plans.size, 1, 'план не запомнен');
+  /* план помнит ветку pickPlan, которая его выбрала: её называет episode.js */
+  const kept = b.plans.get('T-A2');
+  assert.ok(['order', 'relight', 'flood', 'take', 'stage', 'build', 'feed'].includes(kept.by), 'ветка плана: ' + kept.by);
+  assert.equal(kept.by === 'take', kept.kind === 'take', 'ветка не совпала с видом плана');
 });
 
 test('стоящая машина с застарелым wait — не посреди шага: план ей дают (10.6)', () => {
