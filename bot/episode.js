@@ -18,7 +18,9 @@ import { openJournal } from '@zoria/sdk';
 import { DIALS, HarvestBot } from './dist/harvest.js';
 import { blockEnd } from '../scripts/decisions-check.mjs';
 
-const [file, slot, fromArg, toArg, dialsArg] = process.argv.slice(2);
+/* --md — черновик EPISODE.md вместо разбора в терминал */
+const MD = process.argv.includes('--md');
+const [file, slot, fromArg, toArg, dialsArg] = process.argv.slice(2).filter((a) => a !== '--md');
 if (!file || !['A', 'B', 'C'].includes(slot) || !Number.isFinite(Number(fromArg)) || !Number.isFinite(Number(toArg))) {
   console.error('node episode.js <match-N.runlog> <A|B|C> <от> <до> [ручки JSON]');
   process.exit(2);
@@ -31,15 +33,15 @@ const log = readRunLog(bytes);
 /* ветка pickPlan -> функция harvest.ts; номера строк — по коду, который лежит
    рядом, а не по памяти: ответ эпизода ссылается на код финальной сдачи */
 const BRANCH = {
-  guard: ['guardPlan', 'Клинок-сторож: чужой Ткач на нашей голке'],
-  jam: ['jamPlan', 'Клинок-завада'],
-  order: ['orderPlan', 'замовлення'],
-  relight: ['relightPlan', 'мост к своей погасшей голке'],
-  flood: ['buildPlan', 'стройка при заряде выше flood'],
-  take: ['takePlan', 'ничья или чужая руина в досягаемости нити'],
-  stage: ['stagePlan', 'стоянка у кольца перед зорёй'],
-  build: ['buildPlan', 'стройка'],
-  feed: ['feedPlan', 'живлення'],
+  guard: ['guardPlan', 'Клинок-сторож: чужой Ткач на нашей голке', 'прогрев чужой горящей голки 24 такта, греющий стоит на ней (9.2); таран Ткача за работой чистый (11.7)'],
+  jam: ['jamPlan', 'Клинок-завада', 'покрытие заглушённой голки тянет глушащий (8.7, 11.4)'],
+  order: ['orderPlan', 'замовлення', '30 минут за три удержанные голки (18)'],
+  relight: ['relightPlan', 'мост к своей погасшей голке', 'голка горит, только пока к ней тянется нить (7.2); её покрытие уже оплачено'],
+  flood: ['buildPlan', 'стройка при заряде выше flood', 'заряд выше 360 сгорает (8.9), а рой упёрт в вес 8 (10.2)'],
+  take: ['takePlan', 'ничья или чужая руина в досягаемости нити', 'Ткач на голке греет её и забирает (9.1–9.3)'],
+  stage: ['stagePlan', 'стоянка у кольца перед зорёй', 'после зори голка кольца тянет вдвое (22.4); стоянка у межи не провоцирует Ключника (21.7)'],
+  build: ['buildPlan', 'стройка', 'своя голка за 60 заряда и 8 тактов (12.1–12.3)'],
+  feed: ['feedPlan', 'живлення', 'живлення сдвигает покрытие на кольцо наружу, пока Ткач стоит на голке (8.5)'],
 };
 const src = readFileSync(new URL('./src/harvest.ts', import.meta.url), 'utf8');
 const lines = src.split('\n');
@@ -115,6 +117,58 @@ const say = (o) => {
   if (o.kind === 'watch') return 'watch ' + hex(o);
   return o.kind + (o.unit ? ' ' + o.unit : '');
 };
+
+const usedBranches = () => {
+  const s = new Set();
+  for (const r of rows) for (const p of r.plans.values()) if (p.by) s.add(p.by);
+  return [...s];
+};
+
+if (MD) {
+  /* Черновик, а не ответ: «почему» здесь — пункты правил при ветке, а связать их
+     с тем, что происходило на поле, должен человек, который будет защищать
+     ответ на аудите (11.5). */
+  const out = [];
+  out.push('# Эпизод', '');
+  out.push('> Черновик из `bot/episode.js`: проверить по журналу, дописать раздел «Почему» своими словами, удалить эту строку.', '');
+  out.push('Партия: `' + file + '`, место ' + slot + ', такты ' + from + '–' + to + '.', '');
+  out.push('## Сверка с журналом', '');
+  out.push(
+    mismatch
+      ? 'Голова **расходится** с журналом с такта ' + firstMismatch + ' — ниже объяснение не той головы; ответ по этим строкам давать нельзя.'
+      : 'Свежая голова на тех же кадрах и вердиктах дала те же команды, что записаны в журнале: ' + checked + ' тактов из ' + checked + ' совпали байт в байт (такты под наказом не сверяются).',
+    '',
+  );
+  out.push('## Путь в коде', '');
+  out.push('План каждой машине выбирает `pickPlan` (`' + pickAt + '`) — первая подходящая ветка сверху вниз:', '');
+  out.push('| Ветка | Функция | Что выбрано | Почему (правила) |', '|---|---|---|---|');
+  for (const b of usedBranches()) {
+    const [fn, what, rule] = BRANCH[b] ?? ['?', b, ''];
+    const site = fn === 'buildPlan' || fn === 'relightPlan' ? '; майданчик — `sitePlan` (`' + where('sitePlan') + '`)' : '';
+    out.push('| `' + b + '` | `' + fn + '` (`' + where(fn) + '`)' + site + ' | ' + what + ' | ' + rule + ' |');
+  }
+  out.push('', '## По тактам', '');
+  out.push('| Такт | Заряд | Голок (горит) | Машина | Где | План | Ветка | Команда |', '|---|---|---|---|---|---|---|---|');
+  for (const r of rows) {
+    const p = r.obs?.pulse;
+    const lit = r.obs ? r.obs.mine.needles.filter((n) => !n.dark).length : 0;
+    const cmd = new Map();
+    for (const o of r.orders) if (o.unit) cmd.set(o.unit, say(o));
+    for (const u of r.obs?.mine.units ?? []) {
+      const plan = r.plans.get(u.id);
+      out.push(
+        '| ' + r.t + (r.charter ? ' (наказ)' : '') + ' | ' + (p ? Math.round(p.energy) : '') + ' | ' + (r.obs ? r.obs.mine.needles.length + ' (' + lit + ')' : '') +
+          ' | ' + u.id + ' | ' + hex(u) + ' | ' + (plan ? plan.kind + ' ' + hex(plan.at) + ', с ' + plan.since : '—') + ' | ' + (plan?.by ?? '—') +
+          ' | ' + (cmd.get(u.id) ?? '') + ' |',
+      );
+    }
+    const free = r.orders.filter((o) => !o.unit).map(say);
+    if (free.length) out.push('| ' + r.t + ' | | | — | | | | ' + free.join('; ') + ' |');
+  }
+  out.push('', '## Почему', '', '_Дописать: что на поле сделало эту ветку первой подходящей (заряд, чужие машины, расстояния), со ссылкой на такты таблицы выше._', '');
+  process.stdout.write(out.join('\n'));
+  process.exit(mismatch ? 1 : 0);
+}
 
 console.log('журнал ' + file + ', место ' + slot + ', такты ' + from + '–' + to);
 console.log(
