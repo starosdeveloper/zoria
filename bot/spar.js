@@ -24,9 +24,11 @@ const TICKS = Number(process.env.SPAR_TICKS || 1200);
    чтобы разобрать один состав турнира с SPAR_WHY / SPAR_TIME */
 const RIVALS = (process.env.SPAR_RIVALS || '').split(',').filter(Boolean);
 const rival = (name) =>
-  name.startsWith('грамота:')
-    ? { bot: () => createNakazSparring(NAKAZ_SAMPLES[name.slice('грамота:'.length)]) }
-    : { bot: () => sampleBot(createEngine, name) };
+  name === 'жатва'
+    ? { bot: () => new HarvestBot(DIALS) }
+    : name.startsWith('грамота:')
+      ? { bot: () => createNakazSparring(NAKAZ_SAMPLES[name.slice('грамота:'.length)]) }
+      : { bot: () => sampleBot(createEngine, name) };
 const rivals = () =>
   RIVALS.length ? RIVALS.map(rival) : [{ bot: () => sampleBot(createEngine, 'обхідник') }, { style: { ...ARCHETYPES['рівний'] } }];
 
