@@ -56,13 +56,18 @@ async function runWatcher(): Promise<number> {
   return 0;
 }
 
-async function check(): Promise<number> {
-  const config = loadConfig(process.argv[3]);
+/** An anonymous client of the node with its key ring loaded: what `check` and `ready` both ask first. */
+async function openNode(config: ReturnType<typeof loadConfig>): Promise<{ api: ApiClient; keys: KeyRing; key: KeyRing['known'][number] | undefined }> {
   const gate = new RequestGate({ store: new MemoryStore(), storeKey: 'gate' });
   const api = new ApiClient({ transport: new HttpTransport(config.apiBase, gate), token: () => null, etherOpen: () => false });
   const keys = new KeyRing(() => api.etherKey(), config.fingerprint);
   await keys.reload();
-  const key = keys.known[0];
+  return { api, keys, key: keys.known[0] };
+}
+
+async function check(): Promise<number> {
+  const config = loadConfig(process.argv[3]);
+  const { api, keys, key } = await openNode(config);
   console.log(`server      ${config.apiBase}`);
   console.log(`key         ${key ? `${key.fingerprint} (${key.trust})` : `нет — ${keys.error ? describeKeyError(keys.error) : '?'}`}`);
   const monitor = new EtherMonitor(api, keys);
@@ -100,11 +105,7 @@ async function ready(): Promise<number> {
   const secrets = account ? resolveSecrets(config.secretsFile, account.inline, 'register') : { ok: false as const, problems: ['нет аккаунта'] };
   say(secrets.ok, 'пароль и код заявки', secrets.ok ? config.secretsFile : secrets.problems.join('; '));
 
-  const gate = new RequestGate({ store: new MemoryStore(), storeKey: 'gate' });
-  const api = new ApiClient({ transport: new HttpTransport(config.apiBase, gate), token: () => null, etherOpen: () => false });
-  const keys = new KeyRing(() => api.etherKey(), config.fingerprint);
-  await keys.reload();
-  const key = keys.known[0];
+  const { api, keys, key } = await openNode(config);
   say(config.fingerprint !== null, 'отпечаток из ТЗ закреплён', config.fingerprint ?? 'не задан');
   say(key ? key.trust === 'pinned' : null, 'ключ узла сверен с ТЗ', key ? key.fingerprint : `узел не отдал ключ: ${keys.error ?? '?'}`);
 

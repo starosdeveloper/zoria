@@ -19,7 +19,7 @@
     "typecheck": "tsc -p packages/core && tsc -p apps/watcher && tsc -p apps/client && tsc -p scripts",
     "lint": "eslint .",
     "cycles": "madge --circular --extensions ts,tsx packages/core/src apps/watcher/src apps/client/src bot/src scripts",
-    "clones": "jscpd --min-lines 12 --min-tokens 70 --threshold 1 --reporters console --format typescript,javascript --ignore \"**/node_modules/**,**/dist/**,**/.stryker-tmp/**,**/reports/**\" packages apps bot scripts",
+    "clones": "jscpd --min-lines 6 --min-tokens 50 --threshold 0 --reporters console --format typescript,javascript --ignore \"**/node_modules/**,**/dist/**,**/.stryker-tmp/**,**/reports/**,**/records/**\" packages apps bot scripts",
     "decisions": "node scripts/decisions-check.mjs",
     "preflight": "node scripts/preflight.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm cycles && pnpm clones && pnpm decisions && pnpm test"
