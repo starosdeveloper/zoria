@@ -7,6 +7,7 @@ import { LoginView, RegisterView } from './views/RegisterView.tsx';
 import { AccessView } from './views/AccessView.tsx';
 import { InboxView, NewsView, RollView, StagesView } from './views/FeedViews.tsx';
 import { SettingsView } from './views/SettingsView.tsx';
+import { HqView } from './views/HqView.tsx';
 
 const TAB_LABEL: Record<View, string> = {
   ether: 'Эфир',
@@ -16,6 +17,7 @@ const TAB_LABEL: Record<View, string> = {
   news: 'Новости',
   stages: 'Части',
   roll: 'Журнал',
+  hq: 'Штаб',
   settings: 'Настройки',
 };
 
@@ -35,6 +37,8 @@ function Content({ s, model }: { s: Snapshot; model: AppModel }) {
       return <StagesView s={s} model={model} />;
     case 'roll':
       return <RollView s={s} model={model} />;
+    case 'hq':
+      return <HqView />;
     case 'settings':
       return <SettingsView s={s} model={model} />;
   }

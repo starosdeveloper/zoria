@@ -41,7 +41,7 @@ import {
 } from '@zoria/core';
 import { initialListening, initialServer, local, saveListening, saveServer, serverProfile, session as sessionStore } from './settings.ts';
 
-export const VIEWS = ['ether', 'register', 'access', 'inbox', 'news', 'stages', 'roll', 'settings'] as const;
+export const VIEWS = ['ether', 'register', 'access', 'inbox', 'news', 'stages', 'roll', 'hq', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 
 const SUMMARY_INTERVAL_MS = 15_000;
