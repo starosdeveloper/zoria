@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { BeliefTimeline, parseJournal } from '@zoria/hq';
+import { ChannelView } from './ChannelView.tsx';
 
 /*
- * Штаб (часть 3): вера бота по такту из его дневника (`belief-N.ndjson`).
+ * Штаб (часть 3): вера бота по такту из его дневника (`belief-N.ndjson`) и
+ * профайлер канала по журналу партии (`ChannelView`).
  *
  * Состояние вкладки — своё и локальное: загруженный файл и выбранный такт
  * сетевой модели клиента не касаются. Вёрстка размечена `data-hq-*` сразу:
@@ -17,6 +19,15 @@ interface Loaded {
 }
 
 export function HqView() {
+  return (
+    <div className="hq">
+      <BeliefView />
+      <ChannelView />
+    </div>
+  );
+}
+
+function BeliefView() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(1);
@@ -45,7 +56,9 @@ export function HqView() {
     <section className="panel" data-hq="belief">
       <h2>Штаб: вера бота</h2>
       <label className="field">
-        Дневник веры (<code>belief-N.ndjson</code>):{' '}
+        <span>
+          Дневник веры (<code>belief-N.ndjson</code>):
+        </span>
         <input
           type="file"
           accept=".ndjson,application/x-ndjson,application/json"
@@ -56,13 +69,13 @@ export function HqView() {
         />
       </label>
       {error ? (
-        <p className="banner banner-bad" data-hq-error="">
+        <p className="banner banner-bad" data-hq-error="belief">
           {error}
         </p>
       ) : null}
       {loaded ? (
         <>
-          <p className="muted small" data-hq-file="">
+          <p className="muted small" data-hq-file="belief">
             {loaded.name}: такты {loaded.first}–{loaded.last}
           </p>
           <label className="field">
@@ -80,7 +93,7 @@ export function HqView() {
             <output data-hq-tick="">{tick}</output>
           </label>
           {belief ? (
-            <dl className="grid" data-hq-belief="">
+            <dl className="facts" data-hq-belief="">
               <dt>Заряд</dt>
               <dd data-hq-energy="">{Math.round(belief.pulse.energy)}</dd>
               <dt>Голок, известных боту</dt>

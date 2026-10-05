@@ -11,7 +11,7 @@
    Файл не по схеме — ошибка с названным полем, а не пустой профиль: пустой
    график выглядел бы как молчавший бот. */
 
-import { decodeCbor, type Cbor } from './cbor.js';
+import { CborError, decodeCbor, type Cbor } from './cbor.js';
 
 export type SlotLetter = 'A' | 'B' | 'C';
 const LETTERS: readonly SlotLetter[] = ['A', 'B', 'C'];
@@ -56,14 +56,23 @@ function tuple(x: Cbor, n: number, what: string): Cbor[] {
   return a.length === n ? a : fail(`${what} — ${String(a.length)} полей вместо ${String(n)}`);
 }
 
+function decode(bytes: Uint8Array, what: string): Cbor {
+  try {
+    return decodeCbor(bytes);
+  } catch (e) {
+    if (e instanceof CborError || e instanceof TypeError) fail(`${what} не разбирается как CBOR (${e.message})`);
+    throw e;
+  }
+}
+
 export function readRunlog(bytes: Uint8Array): Runlog {
-  const top = list(decodeCbor(bytes), 'запись');
+  const top = list(decode(bytes, 'файл'), 'запись');
   /* 10.5: законны шесть полей (без отказов) и семь */
   if (top.length !== 6 && top.length !== 7) fail(`${String(top.length)} полей, ожидалось 6 или 7`);
   const [v, manifestBytes, bots, submits, hall, episodes, denies = []] = top;
 
   if (!(manifestBytes instanceof Uint8Array)) fail('манифест — не байтовая строка');
-  const manifest = list(decodeCbor(manifestBytes), 'манифест');
+  const manifest = list(decode(manifestBytes, 'манифест'), 'манифест');
   const engine = manifest[MANIFEST_ENGINE];
   if (typeof engine !== 'string') fail('пин движка в манифесте — не строка');
 

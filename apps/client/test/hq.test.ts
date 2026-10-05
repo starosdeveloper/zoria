@@ -15,6 +15,14 @@ describe('HqView', () => {
     expect(html).not.toContain('data-hq-scrub');
   });
 
+  it('профайлер канала: поле журнала, без файла ни графика, ни итогов', () => {
+    const html = renderToString(createElement(HqView));
+    expect(html).toContain('data-hq="channel"');
+    expect(html).toContain('data-hq-input="runlog"');
+    expect(html).not.toContain('data-hq-chart');
+    expect(html).not.toContain('data-hq-totals');
+  });
+
   it('вкладка штаба есть в списке вкладок клиента', () => {
     expect(VIEWS).toContain('hq');
   });

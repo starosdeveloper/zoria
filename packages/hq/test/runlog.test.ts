@@ -61,4 +61,9 @@ describe('readRunlog', () => {
     );
     expect(bad('87' + BODY.join('') + '81 84 00 01 00 20')).toThrow(/отказ 0: код — не целое ≥ 0/);
   });
+
+  it('не CBOR вовсе (дневник веры вместо журнала) — названо, что это не журнал', () => {
+    const ndjson = new TextEncoder().encode('{"t":1,"full":true}\n');
+    expect(() => readRunlog(ndjson)).toThrow(/^журнал не по схеме run-log: файл не разбирается как CBOR \(CBOR, байт/);
+  });
 });

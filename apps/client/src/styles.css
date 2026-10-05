@@ -426,6 +426,25 @@ input[type='radio'] {
   line-height: 1.8;
 }
 
+.hq {
+  display: grid;
+  gap: 16px;
+}
+.hq-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0;
+}
+.hq-chart {
+  display: block;
+  width: 100%;
+  height: 140px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  cursor: crosshair;
+}
+
 .facts {
   display: grid;
   grid-template-columns: max-content 1fr;
