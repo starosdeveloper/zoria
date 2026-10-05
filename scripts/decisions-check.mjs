@@ -93,8 +93,11 @@ export function check(doc, read, exists, list) {
       if (!exists(p)) errs.push('карта: пути нет: ' + p);
     }
   }
-  for (const f of list('bot/src').filter((f) => f.endsWith('.ts'))) {
-    if (!named.has('bot/src/' + f)) errs.push('карта: модуля нет в карте: bot/src/' + f);
+  /* модули бота и штаба (оценивание 10.1: «модули репозитория с кодом бота и штаба») */
+  for (const dir of ['bot/src', 'packages/hq/src']) {
+    for (const f of list(dir).filter((f) => f.endsWith('.ts') && f !== 'index.ts')) {
+      if (!named.has(dir + '/' + f)) errs.push('карта: модуля нет в карте: ' + dir + '/' + f);
+    }
   }
   for (const f of list('bot').filter((f) => f.endsWith('.js'))) {
     if (!named.has('bot/' + f)) errs.push('карта: скрипта нет в карте: bot/' + f);
