@@ -18,7 +18,27 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm lint
+      # Линтер с типами читает `bot/src` вместе с типами @zoria/* из частного
+      # реестра. Без них каждое обращение к движку — «тип не разрешён», и с
+      # 04.10 job падал здесь 790 ошибками, не дойдя до остальных шагов. Есть
+      # секрет — пакеты бота ставятся и линтится всё; нет — `bot/` выпадает из
+      # линтера с названным предупреждением, а не молча.
+      - name: пакеты бота для линтера
+        id: botdeps
+        env:
+          ZORIA_NPM_AUTH: ${{ secrets.ZORIA_NPM_AUTH }}
+        run: |
+          if [ -n "$ZORIA_NPM_AUTH" ]; then
+            (cd bot && npm ci --ignore-scripts)
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::нет секрета ZORIA_NPM_AUTH: bot/ не проверен линтером (пакеты @zoria/* в частном реестре)"
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.botdeps.outputs.full == 'true'
+        run: pnpm lint
+      - if: steps.botdeps.outputs.full != 'true'
+        run: pnpm exec eslint . --ignore-pattern 'bot/**'
       - run: pnpm cycles # циклы импорта, K5
       - run: pnpm clones # структурные клоны, K5
       - run: pnpm decisions # карта и ссылки DECISIONS.md против кода, Р1/Р2
