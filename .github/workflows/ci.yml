@@ -66,10 +66,12 @@ jobs:
         working-directory: bot
         env:
           ZORIA_NPM_AUTH: ${{ secrets.ZORIA_NPM_AUTH }}
+        # ровно то, что запустит проверяющий (P2-01), на нижней версии Node из
+        # 02-path: `node --test test/` Node 24 читает как модуль, а не каталог,
+        # и падал здесь, оставаясь зелёным на Node 26 у нас
         run: |
           npm ci
-          npm run build
-          node --test test/
+          npm test
           npx zaria-kit lint nakaz.yaml
 
   secrets:
